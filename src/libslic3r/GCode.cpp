@@ -5246,7 +5246,7 @@ LayerResult GCode::process_layer(
 
         // Spiral vase mode handles filament changes via set_extruder()'s passthrough
         // mechanism, so the spiral is not disabled for those layers.
-        if (!gcode_toolchange.empty() && !m_spiral_vase)
+        if (!gcode_toolchange.empty() && !(m_spiral_vase && m_spiral_vase->is_enabled()))
             result.spiral_vase_enable = false;
         
         gcode += std::move(gcode_toolchange);
@@ -7761,7 +7761,7 @@ std::string GCode::set_extruder(unsigned int new_filament_id, double print_z, bo
     // tags so SpiralVase::process_layer() emits it unchanged instead of mangling retracts,
     // Z lifts, and wipe moves.
     std::string gcode;
-    if (m_spiral_vase)
+    if (m_spiral_vase && m_spiral_vase->is_enabled())
         gcode = std::string("; ") + SpiralVase::PASSTHROUGH_START_TAG + "\n";
 
     // prepend retraction on the current extruder
@@ -8067,7 +8067,7 @@ std::string GCode::set_extruder(unsigned int new_filament_id, double print_z, bo
     //Orca: tool changer or IDEX's firmware may change Z position, so we set it to unknown/undefined
     m_last_pos_defined = false;
 
-    if (m_spiral_vase)
+    if (m_spiral_vase && m_spiral_vase->is_enabled())
         gcode += std::string("; ") + SpiralVase::PASSTHROUGH_END_TAG + "\n";
 
     return gcode;
