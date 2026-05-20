@@ -3677,7 +3677,18 @@ void GCode::process_layers(
                 //BBS
                 check_placeholder_parser_failed();
                 print.throw_if_canceled();
-                return this->process_layer(print, layer.second, layer_tools, &layer == &layers_to_print.back(), &print_object_instances_ordering, tool_ordering.get_most_used_extruder(), size_t(-1));
+                LayerResult result = this->process_layer(print, layer.second, layer_tools, &layer == &layers_to_print.back(), &print_object_instances_ordering, tool_ordering.get_most_used_extruder(), size_t(-1));
+                // Also disable spiral vase on the layer immediately before a color change or pause.
+                // The color-change layer is already flat; disabling the preceding layer too ensures it
+                // bonds to a flat surface rather than a sloped spiral top face.
+                if (m_spiral_vase && result.spiral_vase_enable && layer_to_print_idx < layers_to_print.size()) {
+                    const LayerTools& next_tools = tool_ordering.tools_for_layer(layers_to_print[layer_to_print_idx].first);
+                    if (next_tools.custom_gcode != nullptr &&
+                        (next_tools.custom_gcode->type == CustomGCode::ColorChange ||
+                         next_tools.custom_gcode->type == CustomGCode::PausePrint))
+                        result.spiral_vase_enable = false;
+                }
+                return result;
             }
         });
     if (m_spiral_vase) {
@@ -3778,7 +3789,21 @@ void GCode::process_layers(
                 //BBS
                 check_placeholder_parser_failed();
                 print.throw_if_canceled();
-                return this->process_layer(print, { std::move(layer) }, tool_ordering.tools_for_layer(layer.print_z()), &layer == &layers_to_print.back(), nullptr, tool_ordering.get_most_used_extruder(), single_object_idx, prime_extruder);
+                // Capture these before the move below invalidates the reference.
+                const coordf_t layer_print_z = layer.print_z();
+                const bool     is_last_layer = &layer == &layers_to_print.back();
+                // Look ahead: if the next layer has a color change or pause, also disable spiral
+                // on this layer so the flat color-change layer bonds to a flat surface below it.
+                const LayerTools* next_tools_ptr = nullptr;
+                if (m_spiral_vase && layer_to_print_idx < layers_to_print.size())
+                    next_tools_ptr = &tool_ordering.tools_for_layer(layers_to_print[layer_to_print_idx].print_z());
+                LayerResult result = this->process_layer(print, { std::move(layer) }, tool_ordering.tools_for_layer(layer_print_z), is_last_layer, nullptr, tool_ordering.get_most_used_extruder(), single_object_idx, prime_extruder);
+                if (next_tools_ptr != nullptr && result.spiral_vase_enable &&
+                    next_tools_ptr->custom_gcode != nullptr &&
+                    (next_tools_ptr->custom_gcode->type == CustomGCode::ColorChange ||
+                     next_tools_ptr->custom_gcode->type == CustomGCode::PausePrint))
+                    result.spiral_vase_enable = false;
+                return result;
             }
         });
     if (m_spiral_vase) {
