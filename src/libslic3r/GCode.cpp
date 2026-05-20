@@ -5244,11 +5244,10 @@ LayerResult GCode::process_layer(
             gcode_toolchange = this->set_extruder(extruder_id, print_z);
         }
 
-        if (!gcode_toolchange.empty() && !m_spiral_vase) {
-            // Disable vase mode for layers that has toolchange (not needed for
-            // spiral vase mode — filament changes use the passthrough mechanism)
+        // Spiral vase mode handles filament changes via set_extruder()'s passthrough
+        // mechanism, so the spiral is not disabled for those layers.
+        if (!gcode_toolchange.empty() && !m_spiral_vase)
             result.spiral_vase_enable = false;
-        }
         
         gcode += std::move(gcode_toolchange);
 
@@ -7763,7 +7762,7 @@ std::string GCode::set_extruder(unsigned int new_filament_id, double print_z, bo
     // Z lifts, and wipe moves.
     std::string gcode;
     if (m_spiral_vase)
-        gcode = "; SPIRAL_VASE_PASSTHROUGH_START\n";
+        gcode = std::string("; ") + SpiralVase::PASSTHROUGH_START_TAG + "\n";
 
     // prepend retraction on the current extruder
     gcode += this->retract(true, false);
@@ -8069,7 +8068,7 @@ std::string GCode::set_extruder(unsigned int new_filament_id, double print_z, bo
     m_last_pos_defined = false;
 
     if (m_spiral_vase)
-        gcode += "; SPIRAL_VASE_PASSTHROUGH_END\n";
+        gcode += std::string("; ") + SpiralVase::PASSTHROUGH_END_TAG + "\n";
 
     return gcode;
 }

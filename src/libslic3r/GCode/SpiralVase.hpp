@@ -25,6 +25,12 @@ public:
         m_smooth_spiral = config.spiral_mode_smooth;
     };
 
+    // Tags bracketing filament change sequences in layer G-code. SpiralVase::process_layer()
+    // passes everything between them through unchanged so retracts, Z lifts, and wipe moves
+    // are not mangled by the spiral processor. Emitted by GCode::set_extruder().
+    static constexpr const char* PASSTHROUGH_START_TAG = "SPIRAL_VASE_PASSTHROUGH_START";
+    static constexpr const char* PASSTHROUGH_END_TAG   = "SPIRAL_VASE_PASSTHROUGH_END";
+
     void 		enable(bool en) {
    		m_transition_layer = en && ! m_enabled;
     	m_enabled 		   = en;
