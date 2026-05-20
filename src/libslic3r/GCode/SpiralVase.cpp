@@ -84,12 +84,29 @@ std::string SpiralVase::process_layer(const std::string &gcode, bool last_layer)
     float total_layer_length = 0;
     float layer_height = 0;
     float z = 0.f;
-    
+
     {
+        // Strip passthrough regions (e.g., filament change sequences) before
+        // measuring, so their Z moves don't corrupt layer_height / z calculations.
+        std::string gcode_for_measurement;
+        {
+            bool in_pass = false;
+            std::istringstream ss(gcode);
+            std::string line_str;
+            while (std::getline(ss, line_str)) {
+                if (line_str.find("SPIRAL_VASE_PASSTHROUGH_START") != std::string::npos)
+                    in_pass = true;
+                else if (line_str.find("SPIRAL_VASE_PASSTHROUGH_END") != std::string::npos)
+                    in_pass = false;
+                else if (!in_pass)
+                    gcode_for_measurement += line_str + '\n';
+            }
+        }
+
         //FIXME Performance warning: This copies the GCodeConfig of the reader.
         GCodeReader r = m_reader;  // clone
         bool set_z = false;
-        r.parse_buffer(gcode, [&total_layer_length, &layer_height, &z, &set_z]
+        r.parse_buffer(gcode_for_measurement, [&total_layer_length, &layer_height, &z, &set_z]
             (GCodeReader &reader, const GCodeReader::GCodeLine &line) {
             if (line.cmd_is("G1")) {
                 if (line.extruding(reader)) {
@@ -127,9 +144,32 @@ std::string SpiralVase::process_layer(const std::string &gcode, bool last_layer)
     const float min_segment_length = std::max(float(EPSILON), 2 * float(m_config.resolution.value));
 
     float len = 0.f;
+    bool in_passthrough = false;
     SpiralVase::SpiralPoint last_point = previous_layer != NULL && previous_layer->size() >0? previous_layer->at(previous_layer->size()-1): SpiralVase::SpiralPoint(0,0);
-    m_reader.parse_buffer(gcode, [&new_gcode, &z, total_layer_length, layer_height, transition_in, &len, &current_layer, &previous_layer, &transition_gcode, transition_out, smooth_spiral, &max_xy_dist_for_smoothing, &last_point, starting_flowrate, finishing_flowrate, min_segment_length]
+    m_reader.parse_buffer(gcode, [&new_gcode, &z, total_layer_length, layer_height, transition_in, &len, &current_layer, &previous_layer, &transition_gcode, transition_out, smooth_spiral, &max_xy_dist_for_smoothing, &last_point, starting_flowrate, finishing_flowrate, min_segment_length, &in_passthrough]
         (GCodeReader &reader, GCodeReader::GCodeLine line) {
+        // Pass filament change sequences through unchanged; they are bracketed by
+        // SPIRAL_VASE_PASSTHROUGH_START/END tags emitted by set_extruder().
+        // After the end tag, drop the nozzle to the spiral start Z so the ramp begins
+        // from the correct position.
+        const std::string &raw = line.raw();
+        if (raw.find("SPIRAL_VASE_PASSTHROUGH_START") != std::string::npos) {
+            in_passthrough = true;
+            new_gcode += raw + '\n';
+            return;
+        }
+        if (raw.find("SPIRAL_VASE_PASSTHROUGH_END") != std::string::npos) {
+            in_passthrough = false;
+            new_gcode += raw + '\n';
+            char zbuf[32];
+            snprintf(zbuf, sizeof(zbuf), "G1 Z%.3f\n", z);
+            new_gcode += zbuf;
+            return;
+        }
+        if (in_passthrough) {
+            new_gcode += raw + '\n';
+            return;
+        }
         if (line.cmd_is("G1")) {
             // Orca: Filter out retractions at layer change
             if (line.retracting(reader) || (line.extruding(reader) && line.dist_XY(reader) < min_segment_length)) return;

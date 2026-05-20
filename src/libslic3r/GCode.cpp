@@ -4517,12 +4517,6 @@ LayerResult GCode::process_layer(
                     break;
                 }
         }
-        // Disable spiral vase for layers that carry a color change or pause so the
-        // printer can stop at a flat Z and resume spiral processing afterwards.
-        if (enable && layer_tools.custom_gcode != nullptr &&
-            (layer_tools.custom_gcode->type == CustomGCode::ColorChange ||
-             layer_tools.custom_gcode->type == CustomGCode::PausePrint))
-            enable = false;
         result.spiral_vase_enable = enable;
         // If we're going to apply spiralvase to this layer, disable loop clipping.
         m_enable_loop_clipping = !enable;
@@ -5250,8 +5244,9 @@ LayerResult GCode::process_layer(
             gcode_toolchange = this->set_extruder(extruder_id, print_z);
         }
 
-        if (!gcode_toolchange.empty()) {
-            // Disable vase mode for layers that has toolchange
+        if (!gcode_toolchange.empty() && !m_spiral_vase) {
+            // Disable vase mode for layers that has toolchange (not needed for
+            // spiral vase mode — filament changes use the passthrough mechanism)
             result.spiral_vase_enable = false;
         }
         
@@ -7763,8 +7758,15 @@ std::string GCode::set_extruder(unsigned int new_filament_id, double print_z, bo
     // BBS. Should be placed before retract.
     m_toolchange_count++;
 
+    // In spiral vase mode, bracket the entire filament change sequence with passthrough
+    // tags so SpiralVase::process_layer() emits it unchanged instead of mangling retracts,
+    // Z lifts, and wipe moves.
+    std::string gcode;
+    if (m_spiral_vase)
+        gcode = "; SPIRAL_VASE_PASSTHROUGH_START\n";
+
     // prepend retraction on the current extruder
-    std::string gcode = this->retract(true, false);
+    gcode += this->retract(true, false);
 
     // Always reset the extrusion path, even if the tool change retract is set to zero.
     m_wipe.reset_path();
@@ -8065,6 +8067,9 @@ std::string GCode::set_extruder(unsigned int new_filament_id, double print_z, bo
     }
     //Orca: tool changer or IDEX's firmware may change Z position, so we set it to unknown/undefined
     m_last_pos_defined = false;
+
+    if (m_spiral_vase)
+        gcode += "; SPIRAL_VASE_PASSTHROUGH_END\n";
 
     return gcode;
 }
