@@ -1,6 +1,5 @@
 #include "SpiralVase.hpp"
 #include "GCode.hpp"
-#include <iomanip>
 #include <sstream>
 #include <cmath>
 #include <limits>
@@ -165,9 +164,9 @@ std::string SpiralVase::process_layer(const std::string &gcode, bool last_layer)
             // Reposition to spiral start Z; the filament change sequence returns
             // the nozzle to the nominal layer Z, but the spiral ramp must begin
             // from the previous layer's end Z.
-            std::ostringstream oss;
-            oss << "G1 Z" << std::fixed << std::setprecision(3) << z << '\n';
-            new_gcode += oss.str();
+            char zbuf[32];
+            snprintf(zbuf, sizeof(zbuf), "G1 Z%.3f\n", z);
+            new_gcode += zbuf;
             return;
         }
         if (in_passthrough) {
