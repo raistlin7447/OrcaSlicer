@@ -4517,6 +4517,12 @@ LayerResult GCode::process_layer(
                     break;
                 }
         }
+        // Disable spiral vase for layers that carry a color change or pause so the
+        // printer can stop at a flat Z and resume spiral processing afterwards.
+        if (enable && layer_tools.custom_gcode != nullptr &&
+            (layer_tools.custom_gcode->type == CustomGCode::ColorChange ||
+             layer_tools.custom_gcode->type == CustomGCode::PausePrint))
+            enable = false;
         result.spiral_vase_enable = enable;
         // If we're going to apply spiralvase to this layer, disable loop clipping.
         m_enable_loop_clipping = !enable;
