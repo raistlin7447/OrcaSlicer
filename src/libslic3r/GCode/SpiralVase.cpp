@@ -145,34 +145,36 @@ std::string SpiralVase::process_layer(const std::string &gcode, bool last_layer)
 
     float len = 0.f;
     bool in_passthrough = false;
-    // After a passthrough ends, the nozzle is at the filament-change position rather
-    // than near the perimeter start. Normally the spiral processor drops all XY travel
-    // moves, but we must preserve the first one after a passthrough so the printer can
-    // return to the perimeter start at travel speed before beginning the spiral ramp.
-    bool post_passthrough_travel = false;
+    // Seam XY and feedrate captured at PASSTHROUGH_START (the spiral's last extrusion
+    // point, before the wipe moves that run inside the passthrough). Used to synthesize
+    // a fast return-to-seam travel after the filament change ends. Spiral vase layers
+    // omit the seam travel assuming the nozzle is already there; after a filament change
+    // the nozzle is at the park position, so we must emit it explicitly.
+    float passthrough_seam_x = 0.f, passthrough_seam_y = 0.f, passthrough_f = 0.f;
     SpiralVase::SpiralPoint last_point = previous_layer != NULL && previous_layer->size() >0? previous_layer->at(previous_layer->size()-1): SpiralVase::SpiralPoint(0,0);
-    m_reader.parse_buffer(gcode, [&new_gcode, &z, total_layer_length, layer_height, transition_in, &len, &current_layer, &previous_layer, &transition_gcode, transition_out, smooth_spiral, &max_xy_dist_for_smoothing, &last_point, starting_flowrate, finishing_flowrate, min_segment_length, &in_passthrough, &post_passthrough_travel]
+    m_reader.parse_buffer(gcode, [&new_gcode, &z, total_layer_length, layer_height, transition_in, &len, &current_layer, &previous_layer, &transition_gcode, transition_out, smooth_spiral, &max_xy_dist_for_smoothing, &last_point, starting_flowrate, finishing_flowrate, min_segment_length, &in_passthrough, &passthrough_seam_x, &passthrough_seam_y, &passthrough_f]
         (GCodeReader &reader, GCodeReader::GCodeLine line) {
         // Pass filament change sequences through unchanged; they are bracketed by
         // SPIRAL_VASE_PASSTHROUGH_START/END tags emitted by set_extruder().
-        // After the end tag, drop the nozzle to the spiral start Z so the ramp begins
-        // from the correct position.
         const std::string &raw = line.raw();
         if (raw.find(PASSTHROUGH_START_TAG) != std::string::npos) {
             in_passthrough = true;
             new_gcode += raw + '\n';
+            passthrough_seam_x = reader.x();
+            passthrough_seam_y = reader.y();
+            passthrough_f = reader.f() > 0.f ? reader.f() : 30000.f;
             return;
         }
         if (raw.find(PASSTHROUGH_END_TAG) != std::string::npos) {
             in_passthrough = false;
             new_gcode += raw + '\n';
-            // Reposition to spiral start Z; the filament change sequence returns
-            // the nozzle to the nominal layer Z, but the spiral ramp must begin
-            // from the previous layer's end Z.
-            char zbuf[32];
-            snprintf(zbuf, sizeof(zbuf), "G1 Z%.3f\n", z);
-            new_gcode += zbuf;
-            post_passthrough_travel = true;
+            // Return to the seam at the elevated Z left by the filament change, then lower
+            // to the spiral start Z. This order avoids dragging the nozzle across the model.
+            char buf[64];
+            snprintf(buf, sizeof(buf), "G1 X%.3f Y%.3f F%.0f\n", passthrough_seam_x, passthrough_seam_y, passthrough_f);
+            new_gcode += buf;
+            snprintf(buf, sizeof(buf), "G1 Z%.3f\n", z);
+            new_gcode += buf;
             return;
         }
         if (in_passthrough) {
@@ -192,7 +194,6 @@ std::string SpiralVase::process_layer(const std::string &gcode, bool last_layer)
                 float dist_XY = line.dist_XY(reader);
                 if (line.has_x() || line.has_y()) { // Sometimes lines have X/Y but the move is to the last position
                     if (dist_XY > 0 && line.extruding(reader)) { // Exclude wipe and retract
-                        post_passthrough_travel = false;
                         len += dist_XY;
                         float factor = len / total_layer_length;
                         if (transition_in){
@@ -241,12 +242,6 @@ std::string SpiralVase::process_layer(const std::string &gcode, bool last_layer)
                             }
                         }
                         new_gcode += line.raw() + '\n';
-                    } else if (post_passthrough_travel && dist_XY > 0) {
-                        // First XY travel after a filament change passthrough: emit it so
-                        // the printer repositions at travel speed before the spiral ramp
-                        // begins. Subsequent travels are still dropped as normal.
-                        new_gcode += raw + '\n';
-                        post_passthrough_travel = false;
                     }
                     return;
                     /*  Skip travel moves: the move to first perimeter point will
