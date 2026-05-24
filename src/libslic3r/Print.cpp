@@ -650,7 +650,7 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
         // exactly by satisfying the clearance constraint, this test will not trigger collision.
         const float obj_distance = print.is_all_objects_are_short()
             ? scale_(std::max(0.5f * MAX_OUTER_NOZZLE_DIAMETER, object_skirt_offset) - 0.1)
-            : scale_(0.5f * effective_clearance_radius(print.config()) + object_skirt_offset - 0.1);
+            : scale_(0.5f * print_config.extruder_clearance_radius.value + object_skirt_offset - 0.1);
         const coord_t obj_dist_x = use_xy_clearance ? scale_(0.5f * print_config.extruder_clearance_x.value + object_skirt_offset - 0.1f) : 0;
         const coord_t obj_dist_y = use_xy_clearance ? scale_(0.5f * print_config.extruder_clearance_y.value + object_skirt_offset - 0.1f) : 0;
 
@@ -888,7 +888,7 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
             // Undo only the Y half-clearance; in XY mode the bbox was expanded by minkowski_rect.
             const float y_clearance_half = use_xy_clearance
                 ? 0.5f * print_config.extruder_clearance_y.value
-                : 0.5f * effective_clearance_radius(print.config());
+                : 0.5f * print_config.extruder_clearance_radius.value;
             auto iy1 = orig_bbox.min.y() + scale_(y_clearance_half + object_skirt_offset);
             auto iy2 = orig_bbox.max.y() - scale_(y_clearance_half + object_skirt_offset);
             (const_cast<ModelInstance*>(inst->model_instance))->arrange_order = k+1;

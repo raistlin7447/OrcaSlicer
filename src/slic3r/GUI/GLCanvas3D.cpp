@@ -5573,7 +5573,7 @@ void GLCanvas3D::update_sequential_clearance()
             cfg.extruder_clearance_type.value == ExtruderClearanceType::XY;
         const float shrink_factor = fff_print()->is_all_objects_are_short()
             ? scale_(std::max(0.5f * MAX_OUTER_NOZZLE_DIAMETER, object_skirt_offset) - 0.1)
-            : scale_(0.5f * effective_clearance_radius(cfg) + object_skirt_offset - 0.1);
+            : scale_(0.5f * cfg.extruder_clearance_radius.value + object_skirt_offset - 0.1);
         const coord_t shrink_x = use_xy ? scale_(0.5f * cfg.extruder_clearance_x.value + object_skirt_offset - 0.1f) : 0;
         const coord_t shrink_y = use_xy ? scale_(0.5f * cfg.extruder_clearance_y.value + object_skirt_offset - 0.1f) : 0;
 
