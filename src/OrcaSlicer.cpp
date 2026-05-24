@@ -3639,11 +3639,10 @@ int CLI::run(int argc, char **argv)
     std::vector<double> current_extruder_print_heights;
     double height_to_lid = m_print_config.opt_float("extruder_clearance_height_to_lid");
     double height_to_rod = m_print_config.opt_float("extruder_clearance_height_to_rod");
-    double clearance_radius = m_print_config.opt_float("extruder_clearance_radius");
     double clearance_x = m_print_config.opt_float("extruder_clearance_x");
     double clearance_y = m_print_config.opt_float("extruder_clearance_y");
     bool use_xy_clearance = m_print_config.opt_enum<ExtruderClearanceType>("extruder_clearance_type") == ExtruderClearanceType::XY;
-    double effective_clearance = use_xy_clearance ? std::max(clearance_x, clearance_y) : clearance_radius;
+    double effective_clearance = effective_clearance_radius(m_print_config);
     int shared_printable_width = 0, shared_printable_depth = 0, shared_printable_height = 0, shared_center_x = 0, shared_center_y = 0;
     //double plate_stride;
     std::string bed_texture;

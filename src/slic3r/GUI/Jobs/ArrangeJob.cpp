@@ -772,9 +772,7 @@ arrangement::ArrangeParams init_arrange_params(Plater *p)
     params.use_xy_clearance                    = print_config.extruder_clearance_type.value == ExtruderClearanceType::XY;
     params.clearance_x                         = print_config.extruder_clearance_x.value + object_skirt_offset * 2;
     params.clearance_y                         = print_config.extruder_clearance_y.value + object_skirt_offset * 2;
-    params.clearance_radius                    = params.use_xy_clearance
-        ? std::max(print_config.extruder_clearance_x.value, print_config.extruder_clearance_y.value) + object_skirt_offset * 2
-        : print_config.extruder_clearance_radius.value + object_skirt_offset * 2;
+    params.clearance_radius                    = effective_clearance_radius(print_config) + object_skirt_offset * 2;
     params.object_skirt_offset                 = object_skirt_offset;
     params.printable_height                    = print_config.printable_height.value;
     params.allow_rotations                     = settings.enable_rotation;

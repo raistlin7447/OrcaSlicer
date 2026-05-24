@@ -608,6 +608,10 @@ class StaticPrintConfig;
 // Minimum object distance for arrangement, based on printer technology.
 double min_object_distance(const ConfigBase &cfg);
 
+// Effective clearance radius for sequential printing, accounting for clearance shape type.
+// Falls back to extruder_clearance_radius if the type key is absent (e.g. old profiles).
+float effective_clearance_radius(const ConfigBase &cfg);
+
 // Slic3r dynamic configuration, used to override the configuration
 // per object, per modification volume or per printing material.
 // The dynamic configuration is also used to store user modifications of the print global parameters,
