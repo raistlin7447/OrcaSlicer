@@ -651,8 +651,8 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
         const float obj_distance = print.is_all_objects_are_short()
             ? scale_(std::max(0.5f * MAX_OUTER_NOZZLE_DIAMETER, object_skirt_offset) - 0.1)
             : scale_(0.5f * effective_clearance_radius(print.config()) + object_skirt_offset - 0.1);
-        const coord_t obj_dist_x = scale_(0.5f * print_config.extruder_clearance_x.value + object_skirt_offset - 0.1f);
-        const coord_t obj_dist_y = scale_(0.5f * print_config.extruder_clearance_y.value + object_skirt_offset - 0.1f);
+        const coord_t obj_dist_x = use_xy_clearance ? scale_(0.5f * print_config.extruder_clearance_x.value + object_skirt_offset - 0.1f) : 0;
+        const coord_t obj_dist_y = use_xy_clearance ? scale_(0.5f * print_config.extruder_clearance_y.value + object_skirt_offset - 0.1f) : 0;
 
         for (const PrintObject *print_object : print.objects()) {
             assert(! print_object->model_object()->instances.empty());
@@ -885,8 +885,7 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
             // 只需要考虑喷嘴到滑杆的偏移量，这个比整个工具头的碰撞半径要小得多
             // Only the offset from the nozzle to the slide bar needs to be considered, which is much smaller than the collision radius of the entire tool head.
             const auto& orig_bbox = print_instance_with_bounding_box[k].bounding_box;
-            // Y-overlap determines whether two objects share a "row" and thus need tighter height limits.
-            // In XY mode the bbox stores the Minkowski-expanded hull, so we undo only the Y half-clearance.
+            // Undo only the Y half-clearance; in XY mode the bbox was expanded by minkowski_rect.
             const float y_clearance_half = use_xy_clearance
                 ? 0.5f * print_config.extruder_clearance_y.value
                 : 0.5f * effective_clearance_radius(print.config());

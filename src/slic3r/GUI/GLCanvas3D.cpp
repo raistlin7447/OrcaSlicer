@@ -5574,8 +5574,8 @@ void GLCanvas3D::update_sequential_clearance()
         const float shrink_factor = fff_print()->is_all_objects_are_short()
             ? scale_(std::max(0.5f * MAX_OUTER_NOZZLE_DIAMETER, object_skirt_offset) - 0.1)
             : scale_(0.5f * effective_clearance_radius(cfg) + object_skirt_offset - 0.1);
-        const coord_t shrink_x = scale_(0.5f * cfg.extruder_clearance_x.value + object_skirt_offset - 0.1f);
-        const coord_t shrink_y = scale_(0.5f * cfg.extruder_clearance_y.value + object_skirt_offset - 0.1f);
+        const coord_t shrink_x = use_xy ? scale_(0.5f * cfg.extruder_clearance_x.value + object_skirt_offset - 0.1f) : 0;
+        const coord_t shrink_y = use_xy ? scale_(0.5f * cfg.extruder_clearance_y.value + object_skirt_offset - 0.1f) : 0;
 
         m_sequential_print_clearance.m_hull_2d_cache.reserve(m_model->objects.size());
         for (size_t i = 0; i < m_model->objects.size(); ++i) {
