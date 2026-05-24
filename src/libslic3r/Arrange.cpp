@@ -149,11 +149,22 @@ void update_unselected_items_inflation(ArrangePolygons& unselected, const Dynami
 {
     float exclusion_gap = 1.f;
     if (params.is_seq_print) {
-        // bed_shrink_x is typically (-params.clearance_radius / 2+5) for seq_print
-        exclusion_gap = std::max(exclusion_gap, params.clearance_radius / 2 + params.bed_shrink_x + 1.f);  // +1mm gap so the exclusion region is not too close
-        // dont forget to move the excluded region
-        for (auto& region : unselected) {
-            if (region.is_virt_object) region.poly.translate(scaled(params.bed_shrink_x), scaled(params.bed_shrink_y));
+        if (params.use_xy_clearance) {
+            coord_t dx = scale_(params.clearance_x / 2.f);
+            coord_t dy = scale_(params.clearance_y / 2.f);
+            for (auto& ap : unselected) {
+                if (ap.is_virt_object) {
+                    ap.poly.translate(scaled(params.bed_shrink_x), scaled(params.bed_shrink_y));
+                    if (!ap.is_extrusion_cali_object)
+                        ap.poly.contour = Geometry::minkowski_rect(ap.poly.contour, dx, dy);
+                }
+            }
+        } else {
+            // bed_shrink_x is typically (-params.clearance_radius / 2+5) for seq_print
+            exclusion_gap = std::max(exclusion_gap, params.clearance_radius / 2 + params.bed_shrink_x + 1.f);  // +1mm gap so the exclusion region is not too close
+            for (auto& region : unselected) {
+                if (region.is_virt_object) region.poly.translate(scaled(params.bed_shrink_x), scaled(params.bed_shrink_y));
+            }
         }
     }
     // For occulusion regions, inflation should be larger to prevent genrating brim on them.

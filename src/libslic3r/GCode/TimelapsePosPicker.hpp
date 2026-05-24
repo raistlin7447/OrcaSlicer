@@ -68,7 +68,8 @@ namespace Slic3r {
         PrintSequence m_print_seq;
         bool m_based_on_all_layer;
         int m_nozzle_height_to_rod;
-        int m_nozzle_clearance_radius;
+        float m_clearance_x;
+        float m_clearance_y;
         std::optional<int> m_liftable_extruder_id;
         std::optional<int> m_extruder_height_gap;
 

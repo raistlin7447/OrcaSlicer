@@ -8336,17 +8336,6 @@ DynamicPrintConfig* DynamicPrintConfig::new_from_defaults_keys(const std::vector
     return out;
 }
 
-float effective_clearance_radius(const ConfigBase &cfg)
-{
-    auto *radius = cfg.option<ConfigOptionFloat>("extruder_clearance_radius");
-    auto *type   = cfg.option<ConfigOptionEnum<ExtruderClearanceType>>("extruder_clearance_type");
-    auto *cx     = cfg.option<ConfigOptionFloat>("extruder_clearance_x");
-    auto *cy     = cfg.option<ConfigOptionFloat>("extruder_clearance_y");
-    if (type && type->value == ExtruderClearanceType::XY && cx && cy)
-        return std::max(cx->value, cy->value);
-    return radius ? radius->value : 0.f;
-}
-
 double min_object_distance(const ConfigBase &cfg)
 {
     const ConfigOptionEnum<PrinterTechnology> *opt_printer_technology = cfg.option<ConfigOptionEnum<PrinterTechnology>>("printer_technology");
@@ -8365,8 +8354,12 @@ double min_object_distance(const ConfigBase &cfg)
         if (!ecr_opt || !co_opt)
             ret = 0.;
         else {
-            double clearance = effective_clearance_radius(cfg);
-            // min object distance is max(duplicate_distance, clearance)
+            auto type_opt = cfg.option<ConfigOptionEnum<ExtruderClearanceType>>("extruder_clearance_type");
+            auto cx_opt   = cfg.option<ConfigOptionFloat>("extruder_clearance_x");
+            auto cy_opt   = cfg.option<ConfigOptionFloat>("extruder_clearance_y");
+            double clearance = (type_opt && type_opt->value == ExtruderClearanceType::XY && cx_opt && cy_opt)
+                ? std::max(cx_opt->value, cy_opt->value)
+                : ecr_opt->value;
             ret = ((co_opt->value == PrintSequence::ByObject) && clearance > duplicate_distance) ?
                       clearance : duplicate_distance;
         }

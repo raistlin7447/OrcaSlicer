@@ -1,4 +1,5 @@
 #include "ClipperUtils.hpp"
+#include "Geometry/ConvexHull.hpp"
 #include "TimelapsePosPicker.hpp"
 #include "Layer.hpp"
 
@@ -13,7 +14,9 @@ namespace Slic3r {
         print = print_;
 
         m_nozzle_height_to_rod = print_->config().extruder_clearance_height_to_rod;
-        m_nozzle_clearance_radius = effective_clearance_radius(print_->config());
+        bool use_xy = print_->config().extruder_clearance_type.value == ExtruderClearanceType::XY;
+        m_clearance_x = use_xy ? print_->config().extruder_clearance_x.value : print_->config().extruder_clearance_radius.value;
+        m_clearance_y = use_xy ? print_->config().extruder_clearance_y.value : print_->config().extruder_clearance_radius.value;
         if (print_->config().nozzle_diameter.size() > 1 && print_->config().extruder_printable_height.size() > 1) {
             m_extruder_height_gap = std::abs(print_->config().extruder_printable_height.values[0] - print_->config().extruder_printable_height.values[1]);
             m_liftable_extruder_id = print_->config().extruder_printable_height.values[0] < print_->config().extruder_printable_height.values[1] ? 0 : 1;
@@ -34,7 +37,8 @@ namespace Slic3r {
 
         m_print_seq = PrintSequence::ByObject;
         m_nozzle_height_to_rod = 0;
-        m_nozzle_clearance_radius = 0;
+        m_clearance_x = 0;
+        m_clearance_y = 0;
         m_liftable_extruder_id = std::nullopt;
         m_extruder_height_gap = std::nullopt;
         m_based_on_all_layer = false;
@@ -252,41 +256,20 @@ namespace Slic3r {
     // expand the object expolygon by safe distance, scaled data
     Polygon TimelapsePosPicker::expand_object_projection(const Polygon &poly, bool by_object, bool higher_than_curr)
     {
-        float eff_radius = effective_clearance_radius(print->config());
-        float radius = 0;
-        if (by_object) {
-            if (higher_than_curr) {
-                radius = scale_(eff_radius);
-            }else{
-                radius = scale_(eff_radius / 2);
-            }
-        }
-        else
-            radius = scale_(eff_radius / 2);
-
-        // the input poly is bounding box, so we get the first offseted polygon is ok
-        auto ret = offset(poly, radius);
-        if (ret.empty())
-            return {};
-        return ret[0];
+        float scale = (by_object && higher_than_curr) ? 1.f : 0.5f;
+        coord_t dx = scale_(m_clearance_x * scale);
+        coord_t dy = scale_(m_clearance_y * scale);
+        return Geometry::minkowski_rect(poly, dx, dy);
     }
 
     // unscaled data
     BoundingBoxf3 TimelapsePosPicker::expand_object_bbox(const BoundingBoxf3& bbox, bool by_object)
     {
-        float eff_radius = effective_clearance_radius(print->config());
-        float radius = 0;
-        if (by_object)
-            radius = eff_radius;
-        else
-            radius = eff_radius / 2;
-
+        float cx = by_object ? m_clearance_x : m_clearance_x / 2;
+        float cy = by_object ? m_clearance_y : m_clearance_y / 2;
         BoundingBoxf3 ret = bbox;
-        ret.min.x() -= radius;
-        ret.min.y() -= radius;
-        ret.max.x() += radius;
-        ret.max.y() += radius;
-
+        ret.min.x() -= cx;  ret.max.x() += cx;
+        ret.min.y() -= cy;  ret.max.y() += cy;
         return ret;
     }
 
@@ -339,9 +322,9 @@ namespace Slic3r {
         if (!obj)
             return {};
         auto bbox = get_real_instance_bbox(obj->instances().front());
-        float radius = m_nozzle_clearance_radius / 2;
-
-        auto offset_bbox = bbox.inflated(sqrt(2) * radius);
+        BoundingBoxf3 offset_bbox = bbox;
+        offset_bbox.min.x() -= sqrt(2) * m_clearance_x / 2;  offset_bbox.max.x() += sqrt(2) * m_clearance_x / 2;
+        offset_bbox.min.y() -= sqrt(2) * m_clearance_y / 2;  offset_bbox.max.y() += sqrt(2) * m_clearance_y / 2;
         // Constrain the coordinates to the first quadrant.
         Polygon ret = {
             DefaultCameraPos,
