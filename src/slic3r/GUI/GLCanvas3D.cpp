@@ -5568,25 +5568,29 @@ void GLCanvas3D::update_sequential_clearance()
     if (m_sequential_print_clearance_first_displacement) {
         m_sequential_print_clearance.m_hull_2d_cache.clear();
         auto [object_skirt_offset, _] = fff_print()->object_skirt_offset();
-        float shrink_factor;
-        if (fff_print()->is_all_objects_are_short())
-            shrink_factor = scale_(std::max(0.5f * MAX_OUTER_NOZZLE_DIAMETER, object_skirt_offset) - 0.1);
-        else
-            shrink_factor = static_cast<float>(scale_(0.5f * effective_clearance_radius(fff_print()->config()) + object_skirt_offset - 0.1));
+        const auto& cfg = fff_print()->config();
+        const bool use_xy = !fff_print()->is_all_objects_are_short() &&
+            cfg.extruder_clearance_type.value == ExtruderClearanceType::XY;
+        const float shrink_factor = fff_print()->is_all_objects_are_short()
+            ? scale_(std::max(0.5f * MAX_OUTER_NOZZLE_DIAMETER, object_skirt_offset) - 0.1)
+            : scale_(0.5f * effective_clearance_radius(cfg) + object_skirt_offset - 0.1);
+        const coord_t shrink_x = scale_(0.5f * cfg.extruder_clearance_x.value + object_skirt_offset - 0.1f);
+        const coord_t shrink_y = scale_(0.5f * cfg.extruder_clearance_y.value + object_skirt_offset - 0.1f);
 
-        double mitter_limit = scale_(0.1);
         m_sequential_print_clearance.m_hull_2d_cache.reserve(m_model->objects.size());
         for (size_t i = 0; i < m_model->objects.size(); ++i) {
             ModelObject* model_object = m_model->objects[i];
             ModelInstance* model_instance0 = model_object->instances.front();
             Polygon hull_no_offset = model_object->convex_hull_2d(Geometry::assemble_transform({ 0.0, 0.0, model_instance0->get_offset().z() }, model_instance0->get_rotation(),
                 model_instance0->get_scaling_factor(), model_instance0->get_mirror()));
-            auto tmp = offset(hull_no_offset,
-                // Shrink the extruder_clearance_radius a tiny bit, so that if the object arrangement algorithm placed the objects
-                // exactly by satisfying the extruder_clearance_radius, this test will not trigger collision.
-                shrink_factor,
-                jtRound, mitter_limit);
-            Polygon hull_2d = !tmp.empty() ? tmp.front() : hull_no_offset;// tmp may be empty due to clipper's bug, see STUDIO-2452
+            Polygon hull_2d;
+            if (use_xy) {
+                hull_2d = Geometry::minkowski_rect(hull_no_offset, shrink_x, shrink_y);
+            } else {
+                // Shrink the clearance a tiny bit so objects placed exactly at the limit don't falsely trigger collision.
+                auto tmp = offset(hull_no_offset, shrink_factor, jtRound, scale_(0.1));
+                hull_2d = !tmp.empty() ? tmp.front() : hull_no_offset; // tmp may be empty due to clipper's bug, see STUDIO-2452
+            }
 
             Pointf3s& cache_hull_2d = m_sequential_print_clearance.m_hull_2d_cache.emplace_back(Pointf3s());
             cache_hull_2d.reserve(hull_2d.points.size());
