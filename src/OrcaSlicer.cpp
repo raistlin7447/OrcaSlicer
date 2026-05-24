@@ -5156,7 +5156,7 @@ int CLI::run(int argc, char **argv)
                 arrange_cfg.use_xy_clearance                    = use_xy_clearance;
                 arrange_cfg.clearance_x                         = clearance_x;
                 arrange_cfg.clearance_y                         = clearance_y;
-                arrange_cfg.clearance_radius                    = effective_clearance;
+                arrange_cfg.clearance_radius                    = clearance_radius;
                 arrange_cfg.printable_height                    = print_height;
                 arrange_cfg.min_obj_distance = 0;
                 if (arrange_cfg.is_seq_print) {

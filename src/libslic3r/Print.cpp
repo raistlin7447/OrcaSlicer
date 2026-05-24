@@ -3587,7 +3587,7 @@ std::tuple<float, float> Print::object_skirt_offset(double margin_height) const
     else if (config().draft_shield == dsEnabled || config().skirt_height * max_layer_height > config().nozzle_height - margin_height)
         object_skirt_offset = config().skirt_distance + line_width;
     else if (config().extruder_clearance_type.value == ExtruderClearanceType::XY) {
-        // The skirt (circular) must fit within the tighter of the two clearance half-extents.
+        // The skirt must fit within the tighter clearance half-extent; use the smaller axis as the conservative limit.
         float min_half_xy = std::min(config().extruder_clearance_x.value, config().extruder_clearance_y.value) / 2.f;
         if (config().skirt_distance + object_skirt_witdh > min_half_xy)
             object_skirt_offset = config().skirt_distance + object_skirt_witdh - min_half_xy;

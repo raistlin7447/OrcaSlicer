@@ -322,6 +322,7 @@ namespace Slic3r {
         if (!obj)
             return {};
         auto bbox = get_real_instance_bbox(obj->instances().front());
+        // sqrt(2)/2 * clearance gives diagonal clearance margin per axis (worst-case 45° approach angle).
         BoundingBoxf3 offset_bbox = bbox;
         offset_bbox.min.x() -= sqrt(2) * m_clearance_x / 2;  offset_bbox.max.x() += sqrt(2) * m_clearance_x / 2;
         offset_bbox.min.y() -= sqrt(2) * m_clearance_y / 2;  offset_bbox.max.y() += sqrt(2) * m_clearance_y / 2;

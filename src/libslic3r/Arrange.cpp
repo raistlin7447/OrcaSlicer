@@ -150,6 +150,7 @@ void update_unselected_items_inflation(ArrangePolygons& unselected, const Dynami
     float exclusion_gap = 1.f;
     if (params.is_seq_print) {
         if (params.use_xy_clearance) {
+            // Virtual exclusion zones are pre-expanded via Minkowski so the scalar exclusion_gap is not needed.
             coord_t dx = scale_(params.clearance_x / 2.f);
             coord_t dy = scale_(params.clearance_y / 2.f);
             for (auto& ap : unselected) {
