@@ -4508,7 +4508,10 @@ void TabPrinter::build_fff()
         optgroup->append_single_option_line("part_cooling_fan_min_pwm", "printer_basic_information_cooling_fan#minimum-non-zero-part-cooling-fan-speed");
 
         optgroup = page->new_optgroup(L("Extruder Clearance"), "param_extruder_clearance");
+        optgroup->append_single_option_line("extruder_clearance_type", "printer_basic_information_extruder_clearance#clearance-shape");
         optgroup->append_single_option_line("extruder_clearance_radius", "printer_basic_information_extruder_clearance#radius");
+        optgroup->append_single_option_line("extruder_clearance_x", "printer_basic_information_extruder_clearance#clearance-x");
+        optgroup->append_single_option_line("extruder_clearance_y", "printer_basic_information_extruder_clearance#clearance-y");
         optgroup->append_single_option_line("extruder_clearance_height_to_rod", "printer_basic_information_extruder_clearance#height-to-rod");
         optgroup->append_single_option_line("extruder_clearance_height_to_lid", "printer_basic_information_extruder_clearance#height-to-lid");
 
@@ -5420,6 +5423,12 @@ void TabPrinter::toggle_options()
 
         auto gcf = m_config->option<ConfigOptionEnum<GCodeFlavor>>("gcode_flavor")->value;
         toggle_line("enable_power_loss_recovery", is_BBL_printer || gcf == gcfMarlinFirmware);
+
+        // Show radius or X/Y clearance fields depending on the clearance shape type
+        bool use_xy_clearance = m_config->opt_enum<ExtruderClearanceType>("extruder_clearance_type") == ExtruderClearanceType::XY;
+        toggle_line("extruder_clearance_radius", !use_xy_clearance);
+        toggle_line("extruder_clearance_x", use_xy_clearance);
+        toggle_line("extruder_clearance_y", use_xy_clearance);
     }
     
 

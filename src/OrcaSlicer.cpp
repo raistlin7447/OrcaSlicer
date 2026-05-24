@@ -3640,6 +3640,10 @@ int CLI::run(int argc, char **argv)
     double height_to_lid = m_print_config.opt_float("extruder_clearance_height_to_lid");
     double height_to_rod = m_print_config.opt_float("extruder_clearance_height_to_rod");
     double clearance_radius = m_print_config.opt_float("extruder_clearance_radius");
+    double clearance_x = m_print_config.opt_float("extruder_clearance_x");
+    double clearance_y = m_print_config.opt_float("extruder_clearance_y");
+    bool use_xy_clearance = m_print_config.opt_enum<ExtruderClearanceType>("extruder_clearance_type") == ExtruderClearanceType::XY;
+    double effective_clearance = use_xy_clearance ? std::max(clearance_x, clearance_y) : clearance_radius;
     int shared_printable_width = 0, shared_printable_depth = 0, shared_printable_height = 0, shared_center_x = 0, shared_center_y = 0;
     //double plate_stride;
     std::string bed_texture;
@@ -4537,12 +4541,12 @@ int CLI::run(int argc, char **argv)
     {
         if (((old_height_to_rod != 0.f) && (old_height_to_rod != height_to_rod))
             || ((old_height_to_lid != 0.f) && (old_height_to_lid != height_to_lid))
-            || ((old_max_radius != 0.f) && (old_max_radius != clearance_radius)))
+            || ((old_max_radius != 0.f) && (old_max_radius != effective_clearance)))
         {
             if (is_seq_print_for_curr_plate) {
                 need_arrange = true;
-                BOOST_LOG_TRIVIAL(info) << boost::format("old_height_to_rod %1%, old_height_to_lid %2%,  old_max_radius %3%, current height_to_rod %4%, height_to_lid %5%, clearance_radius %6%, need arrange!")
-                    %old_height_to_rod %old_height_to_lid %old_max_radius %height_to_rod %height_to_lid %clearance_radius;
+                BOOST_LOG_TRIVIAL(info) << boost::format("old_height_to_rod %1%, old_height_to_lid %2%,  old_max_radius %3%, current height_to_rod %4%, height_to_lid %5%, effective_clearance %6%, need arrange!")
+                    %old_height_to_rod %old_height_to_lid %old_max_radius %height_to_rod %height_to_lid %effective_clearance;
             }
         }
     }
@@ -4695,7 +4699,10 @@ int CLI::run(int argc, char **argv)
                 arrange_cfg.avoid_extrusion_cali_region = avoid_extrusion_cali_region;
                 arrange_cfg.clearance_height_to_rod = height_to_rod;
                 arrange_cfg.clearance_height_to_lid = height_to_lid;
-                arrange_cfg.clearance_radius = clearance_radius;
+                arrange_cfg.use_xy_clearance = use_xy_clearance;
+                arrange_cfg.clearance_x = clearance_x;
+                arrange_cfg.clearance_y = clearance_y;
+                arrange_cfg.clearance_radius = effective_clearance;
                 arrange_cfg.printable_height = print_height;
                 arrange_cfg.min_obj_distance = 0;
                 if (arrange_cfg.is_seq_print) {
@@ -5145,7 +5152,10 @@ int CLI::run(int argc, char **argv)
                 arrange_cfg.avoid_extrusion_cali_region         = avoid_extrusion_cali_region;
                 arrange_cfg.clearance_height_to_rod             = height_to_rod;
                 arrange_cfg.clearance_height_to_lid             = height_to_lid;
-                arrange_cfg.clearance_radius                   = clearance_radius;
+                arrange_cfg.use_xy_clearance                    = use_xy_clearance;
+                arrange_cfg.clearance_x                         = clearance_x;
+                arrange_cfg.clearance_y                         = clearance_y;
+                arrange_cfg.clearance_radius                    = effective_clearance;
                 arrange_cfg.printable_height                    = print_height;
                 arrange_cfg.min_obj_distance = 0;
                 if (arrange_cfg.is_seq_print) {

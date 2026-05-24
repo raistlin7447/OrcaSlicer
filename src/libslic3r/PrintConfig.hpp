@@ -144,6 +144,12 @@ enum class WallDirection
     Count,
 };
 
+enum class ExtruderClearanceType {
+    Radius,
+    XY,
+    Count,
+};
+
 //BBS
 enum class PrintSequence {
     ByLayer,
@@ -1512,7 +1518,10 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionEnum<DraftShield>,  draft_shield))
     ((ConfigOptionFloat,              extruder_clearance_height_to_rod))//BBs
     ((ConfigOptionFloat,              extruder_clearance_height_to_lid))//BBS
+    ((ConfigOptionEnum<ExtruderClearanceType>, extruder_clearance_type))
     ((ConfigOptionFloat,              extruder_clearance_radius))
+    ((ConfigOptionFloat,              extruder_clearance_x))
+    ((ConfigOptionFloat,              extruder_clearance_y))
     ((ConfigOptionFloat,              nozzle_height))
     ((ConfigOptionStrings,            extruder_colour))
     ((ConfigOptionPoints,             extruder_offset))

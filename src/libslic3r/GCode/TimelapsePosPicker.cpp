@@ -13,7 +13,9 @@ namespace Slic3r {
         print = print_;
 
         m_nozzle_height_to_rod = print_->config().extruder_clearance_height_to_rod;
-        m_nozzle_clearance_radius = print_->config().extruder_clearance_radius;
+        m_nozzle_clearance_radius = (print_->config().extruder_clearance_type.value == ExtruderClearanceType::XY)
+            ? std::max(print_->config().extruder_clearance_x.value, print_->config().extruder_clearance_y.value)
+            : print_->config().extruder_clearance_radius.value;
         if (print_->config().nozzle_diameter.size() > 1 && print_->config().extruder_printable_height.size() > 1) {
             m_extruder_height_gap = std::abs(print_->config().extruder_printable_height.values[0] - print_->config().extruder_printable_height.values[1]);
             m_liftable_extruder_id = print_->config().extruder_printable_height.values[0] < print_->config().extruder_printable_height.values[1] ? 0 : 1;
@@ -249,19 +251,28 @@ namespace Slic3r {
 
 
 
+    static float get_effective_clearance_radius(const Print* print)
+    {
+        const PrintConfig& cfg = print->config();
+        if (cfg.extruder_clearance_type.value == ExtruderClearanceType::XY)
+            return std::max(cfg.extruder_clearance_x.value, cfg.extruder_clearance_y.value);
+        return cfg.extruder_clearance_radius.value;
+    }
+
     // expand the object expolygon by safe distance, scaled data
     Polygon TimelapsePosPicker::expand_object_projection(const Polygon &poly, bool by_object, bool higher_than_curr)
     {
+        float eff_radius = get_effective_clearance_radius(print);
         float radius = 0;
         if (by_object) {
             if (higher_than_curr) {
-                radius = scale_(print->config().extruder_clearance_radius.value);
+                radius = scale_(eff_radius);
             }else{
-                radius = scale_(print->config().extruder_clearance_radius.value / 2);
+                radius = scale_(eff_radius / 2);
             }
         }
         else
-            radius = scale_(print->config().extruder_clearance_radius.value / 2);
+            radius = scale_(eff_radius / 2);
 
         // the input poly is bounding box, so we get the first offseted polygon is ok
         auto ret = offset(poly, radius);
@@ -273,11 +284,12 @@ namespace Slic3r {
     // unscaled data
     BoundingBoxf3 TimelapsePosPicker::expand_object_bbox(const BoundingBoxf3& bbox, bool by_object)
     {
+        float eff_radius = get_effective_clearance_radius(print);
         float radius = 0;
         if (by_object)
-            radius = print->config().extruder_clearance_radius.value;
+            radius = eff_radius;
         else
-            radius = print->config().extruder_clearance_radius.value / 2;
+            radius = eff_radius / 2;
 
         BoundingBoxf3 ret = bbox;
         ret.min.x() -= radius;

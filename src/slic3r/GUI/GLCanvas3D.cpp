@@ -5571,8 +5571,13 @@ void GLCanvas3D::update_sequential_clearance()
         float shrink_factor;
         if (fff_print()->is_all_objects_are_short())
             shrink_factor = scale_(std::max(0.5f * MAX_OUTER_NOZZLE_DIAMETER, object_skirt_offset) - 0.1);
-        else
-            shrink_factor = static_cast<float>(scale_(0.5 * fff_print()->config().extruder_clearance_radius.value + object_skirt_offset - 0.1));
+        else {
+            const PrintConfig& cfg = fff_print()->config();
+            float effective_half_clearance = (cfg.extruder_clearance_type.value == ExtruderClearanceType::XY)
+                ? 0.5f * std::max(cfg.extruder_clearance_x.value, cfg.extruder_clearance_y.value)
+                : 0.5f * cfg.extruder_clearance_radius.value;
+            shrink_factor = static_cast<float>(scale_(effective_half_clearance + object_skirt_offset - 0.1));
+        }
 
         double mitter_limit = scale_(0.1);
         m_sequential_print_clearance.m_hull_2d_cache.reserve(m_model->objects.size());

@@ -643,9 +643,16 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
             polygons->clear();
         std::vector<size_t> intersecting_idxs;
 
-        // Shrink the extruder_clearance_radius a tiny bit, so that if the object arrangement algorithm placed the objects
-        // exactly by satisfying the extruder_clearance_radius, this test will not trigger collision.
-        float obj_distance = print.is_all_objects_are_short() ? scale_(std::max(0.5f * MAX_OUTER_NOZZLE_DIAMETER, object_skirt_offset) - 0.1) : scale_(0.5 * print.config().extruder_clearance_radius.value + object_skirt_offset - 0.1);
+        // Shrink the clearance zone a tiny bit, so that if the object arrangement algorithm placed the objects
+        // exactly by satisfying the clearance constraint, this test will not trigger collision.
+        float effective_half_clearance;
+        if (print.config().extruder_clearance_type.value == ExtruderClearanceType::XY)
+            effective_half_clearance = 0.5f * std::max(print.config().extruder_clearance_x.value, print.config().extruder_clearance_y.value);
+        else
+            effective_half_clearance = 0.5f * print.config().extruder_clearance_radius.value;
+        float obj_distance = print.is_all_objects_are_short()
+            ? scale_(std::max(0.5f * MAX_OUTER_NOZZLE_DIAMETER, object_skirt_offset) - 0.1)
+            : scale_(effective_half_clearance + object_skirt_offset - 0.1);
 
         for (const PrintObject *print_object : print.objects()) {
             assert(! print_object->model_object()->instances.empty());
@@ -872,7 +879,10 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
             auto inst = print_instance_with_bounding_box[k].print_instance;
             // 只需要考虑喷嘴到滑杆的偏移量，这个比整个工具头的碰撞半径要小得多
             // Only the offset from the nozzle to the slide bar needs to be considered, which is much smaller than the collision radius of the entire tool head.
-            auto bbox = print_instance_with_bounding_box[k].bounding_box.inflated(-scale_(0.5 * print.config().extruder_clearance_radius.value + object_skirt_offset));
+            float half_clearance_for_bbox = (print.config().extruder_clearance_type.value == ExtruderClearanceType::XY)
+                ? 0.5f * std::max(print.config().extruder_clearance_x.value, print.config().extruder_clearance_y.value)
+                : 0.5f * print.config().extruder_clearance_radius.value;
+            auto bbox = print_instance_with_bounding_box[k].bounding_box.inflated(-scale_(half_clearance_for_bbox + object_skirt_offset));
             auto iy1 = bbox.min.y();
             auto iy2 = bbox.max.y();
             (const_cast<ModelInstance*>(inst->model_instance))->arrange_order = k+1;
@@ -3570,7 +3580,13 @@ std::tuple<float, float> Print::object_skirt_offset(double margin_height) const
         object_skirt_offset = config().skirt_distance + object_skirt_witdh;
     else if (config().draft_shield == dsEnabled || config().skirt_height * max_layer_height > config().nozzle_height - margin_height)
         object_skirt_offset = config().skirt_distance + line_width;
-    else if (config().skirt_distance + object_skirt_witdh > config().extruder_clearance_radius/2)
+    else if (config().extruder_clearance_type.value == ExtruderClearanceType::XY) {
+        float min_xy = std::min(config().extruder_clearance_x.value, config().extruder_clearance_y.value) / 2.f;
+        if (config().skirt_distance + object_skirt_witdh > min_xy)
+            object_skirt_offset = config().skirt_distance + object_skirt_witdh - min_xy;
+        else
+            return std::make_tuple(0, 0);
+    } else if (config().skirt_distance + object_skirt_witdh > config().extruder_clearance_radius/2)
         object_skirt_offset = (config().skirt_distance + object_skirt_witdh - config().extruder_clearance_radius/2);
     else
         return std::make_tuple(0, 0);
