@@ -635,6 +635,9 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
     };
 
     auto [object_skirt_offset, _] = print.object_skirt_offset();
+    // XY clearance mode uses asymmetric Minkowski expansion instead of a uniform offset radius.
+    const bool use_xy_clearance = !print.is_all_objects_are_short() &&
+        print_config.extruder_clearance_type.value == ExtruderClearanceType::XY;
     std::vector<struct print_instance_info> print_instance_with_bounding_box;
     {
         // sequential_print_horizontal_clearance_valid
@@ -645,14 +648,16 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
 
         // Shrink the clearance zone a tiny bit, so that if the object arrangement algorithm placed the objects
         // exactly by satisfying the clearance constraint, this test will not trigger collision.
-        float obj_distance = print.is_all_objects_are_short()
+        const float obj_distance = print.is_all_objects_are_short()
             ? scale_(std::max(0.5f * MAX_OUTER_NOZZLE_DIAMETER, object_skirt_offset) - 0.1)
             : scale_(0.5f * effective_clearance_radius(print.config()) + object_skirt_offset - 0.1);
+        const coord_t obj_dist_x = scale_(0.5f * print_config.extruder_clearance_x.value + object_skirt_offset - 0.1f);
+        const coord_t obj_dist_y = scale_(0.5f * print_config.extruder_clearance_y.value + object_skirt_offset - 0.1f);
 
         for (const PrintObject *print_object : print.objects()) {
             assert(! print_object->model_object()->instances.empty());
             assert(! print_object->instances().empty());
-            
+
             // Orca: check convex hull intersection for each instance individually to handle rotation/offset differences correctly
             // Now we check that no instance of convex_hull intersects any of the previously checked object instances.
             for (const PrintInstance &instance : print_object->instances()) {
@@ -660,12 +665,17 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
                             { 0.0, 0.0, instance.model_instance->get_offset().z() }, instance.model_instance->get_rotation(), instance.model_instance->get_scaling_factor(), instance.model_instance->get_mirror()));
 
                 Polygon convex_hull_no_offset = convex_hull0, convex_hull;
-                auto tmp = offset(convex_hull_no_offset, obj_distance, jtRound, scale_(0.1));
-                if (!tmp.empty()) { // tmp may be empty due to clipper's bug, see STUDIO-2452
-                    convex_hull = tmp.front();
-                    // instance.shift is a position of a centered object, while model object may not be centered.
-                    // Convert the shift from the PrintObject's coordinates into ModelObject's coordinates by removing the centering offset.
+                if (use_xy_clearance) {
+                    convex_hull = Geometry::minkowski_rect(convex_hull_no_offset, obj_dist_x, obj_dist_y);
                     convex_hull.translate(instance.shift - print_object->center_offset());
+                } else {
+                    auto tmp = offset(convex_hull_no_offset, obj_distance, jtRound, scale_(0.1));
+                    if (!tmp.empty()) { // tmp may be empty due to clipper's bug, see STUDIO-2452
+                        convex_hull = tmp.front();
+                        // instance.shift is a position of a centered object, while model object may not be centered.
+                        // Convert the shift from the PrintObject's coordinates into ModelObject's coordinates by removing the centering offset.
+                        convex_hull.translate(instance.shift - print_object->center_offset());
+                    }
                 }
                 convex_hull_no_offset.translate(instance.shift - print_object->center_offset());
                 //juedge the exclude area
@@ -874,9 +884,14 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
             auto inst = print_instance_with_bounding_box[k].print_instance;
             // 只需要考虑喷嘴到滑杆的偏移量，这个比整个工具头的碰撞半径要小得多
             // Only the offset from the nozzle to the slide bar needs to be considered, which is much smaller than the collision radius of the entire tool head.
-            auto bbox = print_instance_with_bounding_box[k].bounding_box.inflated(-scale_(0.5f * effective_clearance_radius(print.config()) + object_skirt_offset));
-            auto iy1 = bbox.min.y();
-            auto iy2 = bbox.max.y();
+            const auto& orig_bbox = print_instance_with_bounding_box[k].bounding_box;
+            // Y-overlap determines whether two objects share a "row" and thus need tighter height limits.
+            // In XY mode the bbox stores the Minkowski-expanded hull, so we undo only the Y half-clearance.
+            const float y_clearance_half = use_xy_clearance
+                ? 0.5f * print_config.extruder_clearance_y.value
+                : 0.5f * effective_clearance_radius(print.config());
+            auto iy1 = orig_bbox.min.y() + scale_(y_clearance_half + object_skirt_offset);
+            auto iy2 = orig_bbox.max.y() - scale_(y_clearance_half + object_skirt_offset);
             (const_cast<ModelInstance*>(inst->model_instance))->arrange_order = k+1;
             double height = (k == (print_instance_count - 1))?printable_height:hc1;
             /*if (has_interlaced_objects) {
