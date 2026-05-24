@@ -145,14 +145,13 @@ std::string SpiralVase::process_layer(const std::string &gcode, bool last_layer)
 
     float len = 0.f;
     bool in_passthrough = false;
-    // Seam XY and feedrate captured at PASSTHROUGH_START (the spiral's last extrusion
-    // point, before the wipe moves that run inside the passthrough). Used to synthesize
-    // a fast return-to-seam travel after the filament change ends. Spiral vase layers
-    // omit the seam travel assuming the nozzle is already there; after a filament change
-    // the nozzle is at the park position, so we must emit it explicitly.
-    float passthrough_seam_x = 0.f, passthrough_seam_y = 0.f, passthrough_f = 0.f;
+    // Travel feedrate captured at PASSTHROUGH_START. Used to synthesize a fast return
+    // travel after the filament change ends. The XY target is taken from reader.x/y() at
+    // PASSTHROUGH_END (post-wipe position) because that is exactly where the reader
+    // believes the nozzle to be when it computes dist_XY for the first extrusion move.
+    float passthrough_f = 0.f;
     SpiralVase::SpiralPoint last_point = previous_layer != NULL && previous_layer->size() >0? previous_layer->at(previous_layer->size()-1): SpiralVase::SpiralPoint(0,0);
-    m_reader.parse_buffer(gcode, [&new_gcode, &z, total_layer_length, layer_height, transition_in, &len, &current_layer, &previous_layer, &transition_gcode, transition_out, smooth_spiral, &max_xy_dist_for_smoothing, &last_point, starting_flowrate, finishing_flowrate, min_segment_length, &in_passthrough, &passthrough_seam_x, &passthrough_seam_y, &passthrough_f]
+    m_reader.parse_buffer(gcode, [&new_gcode, &z, total_layer_length, layer_height, transition_in, &len, &current_layer, &previous_layer, &transition_gcode, transition_out, smooth_spiral, &max_xy_dist_for_smoothing, &last_point, starting_flowrate, finishing_flowrate, min_segment_length, &in_passthrough, &passthrough_f]
         (GCodeReader &reader, GCodeReader::GCodeLine line) {
         // Pass filament change sequences through unchanged; they are bracketed by
         // SPIRAL_VASE_PASSTHROUGH_START/END tags emitted by set_extruder().
@@ -160,18 +159,18 @@ std::string SpiralVase::process_layer(const std::string &gcode, bool last_layer)
         if (raw.find(PASSTHROUGH_START_TAG) != std::string::npos) {
             in_passthrough = true;
             new_gcode += raw + '\n';
-            passthrough_seam_x = reader.x();
-            passthrough_seam_y = reader.y();
             passthrough_f = reader.f() > 0.f ? reader.f() : 30000.f;
             return;
         }
         if (raw.find(PASSTHROUGH_END_TAG) != std::string::npos) {
             in_passthrough = false;
             new_gcode += raw + '\n';
-            // Return to the seam at the elevated Z left by the filament change, then lower
-            // to the spiral start Z. This order avoids dragging the nozzle across the model.
+            // Return to the post-wipe position (where reader thinks the nozzle is) at the
+            // elevated Z left by the filament change, then lower to the spiral start Z.
+            // Using the post-wipe reader position keeps dist_XY correct for the first
+            // extrusion move and avoids dragging the nozzle across the model.
             char buf[64];
-            snprintf(buf, sizeof(buf), "G1 X%.3f Y%.3f F%.0f\n", passthrough_seam_x, passthrough_seam_y, passthrough_f);
+            snprintf(buf, sizeof(buf), "G1 X%.3f Y%.3f F%.0f\n", reader.x(), reader.y(), passthrough_f);
             new_gcode += buf;
             snprintf(buf, sizeof(buf), "G1 Z%.3f\n", z);
             new_gcode += buf;
