@@ -1783,10 +1783,8 @@ void PrintConfigDef::init_fff_params()
 
     def = this->add("by_object_sequence_order", coEnum);
     def->label = L("By object order");
-    def->tooltip = L("Controls the order in which objects are printed during by-object printing. "
-        "\"Default\" uses the object list order. "
-        "\"Auto\" sorts objects front-to-back, left-to-right within each row, "
-        "so the toolhead never has to reach over an already-printed object.");
+    def->tooltip = L("Print order for by-object mode. \"Auto\" sorts objects spatially "
+        "(front-to-back, left-to-right within each row) so the toolhead never traverses over an already-printed object.");
     def->enum_keys_map = &ConfigOptionEnum<ByObjectSequenceOrder>::get_enum_values();
     def->enum_values.push_back("default");
     def->enum_values.push_back("auto");
@@ -2191,7 +2189,7 @@ void PrintConfigDef::init_fff_params()
 
     def = this->add("extruder_clearance_x", coFloat);
     def->label = L("Clearance X");
-    def->tooltip = L("Clearance radius around extruder in X direction. Used for collision avoidance in by-object printing.");
+    def->tooltip = L("Total clearance span in the X direction (toolhead center to edge, times two). Used for collision avoidance in by-object printing.");
     def->sidetext = L("mm");
     def->min = 0;
     def->mode = comAdvanced;
@@ -2199,7 +2197,7 @@ void PrintConfigDef::init_fff_params()
 
     def = this->add("extruder_clearance_y", coFloat);
     def->label = L("Clearance Y");
-    def->tooltip = L("Clearance radius around extruder in Y direction. Used for collision avoidance in by-object printing.");
+    def->tooltip = L("Total clearance span in the Y direction (toolhead center to edge, times two). Used for collision avoidance in by-object printing.");
     def->sidetext = L("mm");
     def->min = 0;
     def->mode = comAdvanced;

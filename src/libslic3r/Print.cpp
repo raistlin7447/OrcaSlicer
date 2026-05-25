@@ -622,7 +622,7 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
         BoundingBox    bounding_box;
         Polygon        hull_polygon;
         int                  object_index;
-        double         arrange_score;
+        double               arrange_score = 0;
         double               height;
     };
     auto find_object_index = [](const Model& model, const ModelObject* obj) {
@@ -773,22 +773,22 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
                 auto inter_min = std::max(l.bounding_box.min.y(), r.bounding_box.min.y());
                 auto inter_max = std::min(l.bounding_box.max.y(), r.bounding_box.max.y());
                 // Same row: Y-ranges overlap by more than the row threshold.
-                if (inter_max - inter_min > scale_(row_y_threshold)) {
+                if (inter_max - inter_min > (coord_t)scale_(row_y_threshold)) {
                     // The left object (smaller X center) must print before the right.
                     if (l.bounding_box.center().x() < r.bounding_box.center().x())
                         must_precede.insert({(int32_t)i, (int32_t)j});
                     else
                         must_precede.insert({(int32_t)j, (int32_t)i});
                 }
-                // Height constraints: objects exceeding clearance_height_to_lid must print last.
+                // Objects exceeding clearance_height_to_lid must print last.
                 if (l.height > hc1 && r.height <= hc1)
                     must_precede.insert({(int32_t)j, (int32_t)i}); // r before l
-                else if (r.height > hc1 && l.height <= hc1)
+                if (r.height > hc1 && l.height <= hc1)
                     must_precede.insert({(int32_t)i, (int32_t)j}); // l before r
-                // Objects taller than clearance_height_to_rod should print after shorter neighbours.
-                else if (l.height > hc2 && l.height > r.height)
+                // Objects taller than clearance_height_to_rod print after shorter neighbours.
+                if (l.height > hc2 && l.height > r.height)
                     must_precede.insert({(int32_t)j, (int32_t)i});
-                else if (r.height > hc2 && r.height > l.height)
+                if (r.height > hc2 && r.height > l.height)
                     must_precede.insert({(int32_t)i, (int32_t)j});
             }
         }
@@ -798,7 +798,7 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
                 auto &pre  = print_instance_with_bounding_box[p(0)];
                 auto &post = print_instance_with_bounding_box[p(1)];
                 if (post.arrange_score <= pre.arrange_score)
-                    post.arrange_score = pre.arrange_score + 1e7;
+                    post.arrange_score = pre.arrange_score + 1e8;
             }
 
         std::sort(print_instance_with_bounding_box.begin(), print_instance_with_bounding_box.end(),
