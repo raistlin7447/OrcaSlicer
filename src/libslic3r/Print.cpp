@@ -652,8 +652,8 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
         const float obj_distance = print.is_all_objects_are_short()
             ? scale_(std::max(0.5f * MAX_OUTER_NOZZLE_DIAMETER, object_skirt_offset) - 0.1)
             : scale_(0.5f * print_config.extruder_clearance_radius.value + object_skirt_offset - 0.1);
-        const coord_t obj_dist_x = use_xy_clearance ? scale_(0.5f * print_config.extruder_clearance_x.value + object_skirt_offset - 0.1f) : 0;
-        const coord_t obj_dist_y = use_xy_clearance ? scale_(0.5f * print_config.extruder_clearance_y.value + object_skirt_offset - 0.1f) : 0;
+        const coord_t obj_dist_x = use_xy_clearance ? scale_(print_config.extruder_clearance_x.value + object_skirt_offset - 0.1f) : 0;
+        const coord_t obj_dist_y = use_xy_clearance ? scale_(print_config.extruder_clearance_y.value + object_skirt_offset - 0.1f) : 0;
 
         for (const PrintObject *print_object : print.objects()) {
             assert(! print_object->model_object()->instances.empty());
@@ -749,9 +749,9 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
         // Spatial sort: front-to-back rows (increasing Y), left-to-right within each row.
         // This ensures the toolhead never has to travel back over an already-printed object.
         // Row membership: two objects are in the same row when their Y-ranges overlap by more
-        // than half the Y clearance, meaning they are close enough in Y that approach direction matters.
+        // than the Y clearance half-extent, meaning they are close enough that approach direction matters.
         const float row_y_threshold = use_xy_clearance
-            ? 0.5f * print_config.extruder_clearance_y.value
+            ? print_config.extruder_clearance_y.value
             : 0.5f * print_config.extruder_clearance_radius.value;
 
         for (size_t i = 0; i < print_instance_with_bounding_box.size(); i++) {
@@ -875,7 +875,7 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
             const auto& orig_bbox = print_instance_with_bounding_box[k].bounding_box;
             // Undo only the Y half-clearance; in XY mode the bbox was expanded by minkowski_rect.
             const float y_clearance_half = use_xy_clearance
-                ? 0.5f * print_config.extruder_clearance_y.value
+                ? print_config.extruder_clearance_y.value
                 : 0.5f * print_config.extruder_clearance_radius.value;
             auto iy1 = orig_bbox.min.y() + (coord_t)scale_(y_clearance_half + object_skirt_offset);
             auto iy2 = orig_bbox.max.y() - (coord_t)scale_(y_clearance_half + object_skirt_offset);
@@ -3576,7 +3576,7 @@ std::tuple<float, float> Print::object_skirt_offset(double margin_height) const
         object_skirt_offset = config().skirt_distance + line_width;
     else if (config().extruder_clearance_type.value == ExtruderClearanceType::XY) {
         // The skirt must fit within the tighter clearance half-extent; use the smaller axis as the conservative limit.
-        float min_half_xy = std::min(config().extruder_clearance_x.value, config().extruder_clearance_y.value) / 2.f;
+        float min_half_xy = std::min(config().extruder_clearance_x.value, config().extruder_clearance_y.value);
         if (config().skirt_distance + object_skirt_witdh > min_half_xy)
             object_skirt_offset = config().skirt_distance + object_skirt_witdh - min_half_xy;
         else

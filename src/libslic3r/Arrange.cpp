@@ -94,8 +94,8 @@ void update_arrange_params(ArrangeParams& params, const DynamicPrintConfig* prin
     // for sequential print, we need to inflate the bed because clearance is so large
     if (params.is_seq_print) {
         if (params.use_xy_clearance) {
-            params.bed_shrink_x -= params.clearance_x / 2;
-            params.bed_shrink_y -= params.clearance_y / 2;
+            params.bed_shrink_x -= params.clearance_x;
+            params.bed_shrink_y -= params.clearance_y;
         } else {
             params.bed_shrink_x -= params.clearance_radius / 2;
             params.bed_shrink_y -= params.clearance_radius / 2;
@@ -115,8 +115,8 @@ void update_selected_items_inflation(ArrangePolygons& selected, const DynamicPri
         } else if (params.use_xy_clearance) {
             // Expand each footprint by the Minkowski sum with the clearance rectangle so the
             // arrangement engine sees an exact asymmetric exclusion zone (instead of a uniform radius).
-            coord_t dx = scale_(params.clearance_x / 2.f + 0.001f);
-            coord_t dy = scale_(params.clearance_y / 2.f + 0.001f);
+            coord_t dx = scale_(params.clearance_x + 0.001f);
+            coord_t dy = scale_(params.clearance_y + 0.001f);
             for (auto& ap : selected)
                 ap.poly.contour = Geometry::minkowski_rect(ap.poly.contour, dx, dy);
             return; // inflation stays 0; libnest2d sees the pre-expanded footprints
@@ -151,8 +151,8 @@ void update_unselected_items_inflation(ArrangePolygons& unselected, const Dynami
     if (params.is_seq_print) {
         if (params.use_xy_clearance) {
             // Virtual exclusion zones are pre-expanded via Minkowski so the scalar exclusion_gap is not needed.
-            coord_t dx = scale_(params.clearance_x / 2.f);
-            coord_t dy = scale_(params.clearance_y / 2.f);
+            coord_t dx = scale_(params.clearance_x);
+            coord_t dy = scale_(params.clearance_y);
             for (auto& ap : unselected) {
                 if (ap.is_virt_object) {
                     ap.poly.translate(scaled(params.bed_shrink_x), scaled(params.bed_shrink_y));

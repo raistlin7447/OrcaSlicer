@@ -2189,19 +2189,19 @@ void PrintConfigDef::init_fff_params()
 
     def = this->add("extruder_clearance_x", coFloat);
     def->label = L("Clearance X");
-    def->tooltip = L("Total clearance span in the X direction (toolhead center to edge, times two). Used for collision avoidance in by-object printing.");
+    def->tooltip = L("Distance from the extruder to the furthest edge in the X direction. Used for collision avoidance in by-object printing.");
     def->sidetext = L("mm");
     def->min = 0;
     def->mode = comAdvanced;
-    def->set_default_value(new ConfigOptionFloat(40));
+    def->set_default_value(new ConfigOptionFloat(20));
 
     def = this->add("extruder_clearance_y", coFloat);
     def->label = L("Clearance Y");
-    def->tooltip = L("Total clearance span in the Y direction (toolhead center to edge, times two). Used for collision avoidance in by-object printing.");
+    def->tooltip = L("Distance from the extruder to the furthest edge in the Y direction. Used for collision avoidance in by-object printing.");
     def->sidetext = L("mm");
     def->min = 0;
     def->mode = comAdvanced;
-    def->set_default_value(new ConfigOptionFloat(40));
+    def->set_default_value(new ConfigOptionFloat(20));
 
     def = this->add("nozzle_height", coFloat);
     def->label = L("Nozzle height");

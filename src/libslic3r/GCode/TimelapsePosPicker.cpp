@@ -256,17 +256,16 @@ namespace Slic3r {
     // expand the object expolygon by safe distance, scaled data
     Polygon TimelapsePosPicker::expand_object_projection(const Polygon &poly, bool by_object, bool higher_than_curr)
     {
-        float scale = (by_object && higher_than_curr) ? 1.f : 0.5f;
-        coord_t dx = scale_(m_clearance_x * scale);
-        coord_t dy = scale_(m_clearance_y * scale);
+        coord_t dx = scale_(by_object && higher_than_curr ? m_clearance_x * 2.f : m_clearance_x);
+        coord_t dy = scale_(by_object && higher_than_curr ? m_clearance_y * 2.f : m_clearance_y);
         return Geometry::minkowski_rect(poly, dx, dy);
     }
 
     // unscaled data
     BoundingBoxf3 TimelapsePosPicker::expand_object_bbox(const BoundingBoxf3& bbox, bool by_object)
     {
-        float cx = by_object ? m_clearance_x : m_clearance_x / 2;
-        float cy = by_object ? m_clearance_y : m_clearance_y / 2;
+        float cx = by_object ? m_clearance_x * 2.f : m_clearance_x;
+        float cy = by_object ? m_clearance_y * 2.f : m_clearance_y;
         BoundingBoxf3 ret = bbox;
         ret.min.x() -= cx;  ret.max.x() += cx;
         ret.min.y() -= cy;  ret.max.y() += cy;
@@ -324,8 +323,8 @@ namespace Slic3r {
         auto bbox = get_real_instance_bbox(obj->instances().front());
         // sqrt(2)/2 * clearance gives diagonal clearance margin per axis (worst-case 45° approach angle).
         BoundingBoxf3 offset_bbox = bbox;
-        offset_bbox.min.x() -= sqrt(2) * m_clearance_x / 2;  offset_bbox.max.x() += sqrt(2) * m_clearance_x / 2;
-        offset_bbox.min.y() -= sqrt(2) * m_clearance_y / 2;  offset_bbox.max.y() += sqrt(2) * m_clearance_y / 2;
+        offset_bbox.min.x() -= sqrt(2) * m_clearance_x;  offset_bbox.max.x() += sqrt(2) * m_clearance_x;
+        offset_bbox.min.y() -= sqrt(2) * m_clearance_y;  offset_bbox.max.y() += sqrt(2) * m_clearance_y;
         // Constrain the coordinates to the first quadrant.
         Polygon ret = {
             DefaultCameraPos,
