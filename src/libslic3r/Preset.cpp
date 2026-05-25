@@ -1067,6 +1067,7 @@ static std::vector<std::string> s_Preset_print_options{
     "max_bridge_length",
     "print_sequence",
     "print_order",
+    "by_object_sequence_order",
     "support_remove_small_overhang",
     "filename_format",
     "wall_filament",

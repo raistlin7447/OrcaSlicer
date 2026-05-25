@@ -308,6 +308,12 @@ static t_config_enum_values s_keys_map_PrintOrder{
 };
 CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(PrintOrder)
 
+static t_config_enum_values s_keys_map_ByObjectSequenceOrder {
+    { "default", int(ByObjectSequenceOrder::Default) },
+    { "auto",    int(ByObjectSequenceOrder::Auto) },
+};
+CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(ByObjectSequenceOrder)
+
 static t_config_enum_values s_keys_map_SlicingMode {
     { "regular",        int(SlicingMode::Regular) },
     { "even_odd",       int(SlicingMode::EvenOdd) },
@@ -1774,6 +1780,20 @@ void PrintConfigDef::init_fff_params()
     def->enum_labels.push_back(L("As object list"));
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionEnum<PrintOrder>(PrintOrder::Default));
+
+    def = this->add("by_object_sequence_order", coEnum);
+    def->label = L("By object order");
+    def->tooltip = L("Controls the order in which objects are printed during by-object printing. "
+        "\"Default\" uses the object list order. "
+        "\"Auto\" sorts objects front-to-back, left-to-right within each row, "
+        "so the toolhead never has to reach over an already-printed object.");
+    def->enum_keys_map = &ConfigOptionEnum<ByObjectSequenceOrder>::get_enum_values();
+    def->enum_values.push_back("default");
+    def->enum_values.push_back("auto");
+    def->enum_labels.push_back(L("Default"));
+    def->enum_labels.push_back(L("Auto"));
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionEnum<ByObjectSequenceOrder>(ByObjectSequenceOrder::Default));
 
     def = this->add("slow_down_for_layer_cooling", coBools);
     def->label = L("Slow printing down for better layer cooling");

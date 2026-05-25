@@ -744,109 +744,74 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
     double hc2              = scale_(print.config().extruder_clearance_height_to_rod); // height to rod
     double printable_height = scale_(print.config().printable_height);
 
-#if 0 //do not sort anymore, use the order in object list
-    auto bed_points = get_bed_shape(print_config);
-    float bed_width = bed_points[1].x() - bed_points[0].x();
-    // 如果扩大以后的多边形的距离小于这个值，就需要严格保证从左到右的打印顺序，否则会撞工具头右侧
-    float unsafe_dist = scale_(print_config.extruder_clearance_max_radius.value - print_config.extruder_clearance_radius.value);
-    struct VecHash
-    {
-        size_t operator()(const Vec2i32 &n1) const
-        {
-            return std::hash<coord_t>()(int(n1(0) * 100 + 100)) + std::hash<coord_t>()(int(n1(1) * 100 + 100)) * 101;
-        }
-    };
-    std::unordered_set<Vec2i32, VecHash> left_right_pair; // pairs in this vector must strictly obey the left-right order
-    for (size_t i = 0; i < print_instance_with_bounding_box.size();i++) {
-        auto &inst         = print_instance_with_bounding_box[i];
-        inst.index         = i;
-        Point pt           = inst.bounding_box.center();
-        inst.arrange_score = pt.x() / 2 + pt.y(); // we prefer print row-by-row, so cost on x-direction is smaller
-    }
-    for (size_t i = 0; i < print_instance_with_bounding_box.size(); i++) {
-        auto &inst         = print_instance_with_bounding_box[i];
-        auto &l            = print_instance_with_bounding_box[i];
-        for (size_t j = 0; j < print_instance_with_bounding_box.size(); j++) {
-            if (j != i) {
-                auto &r        = print_instance_with_bounding_box[j];
-                auto ly1       = l.bounding_box.min.y();
-                auto ly2       = l.bounding_box.max.y();
-                auto ry1       = r.bounding_box.min.y();
-                auto ry2       = r.bounding_box.max.y();
-                auto lx1       = l.bounding_box.min.x();
-                auto rx1       = r.bounding_box.min.x();
-                auto lx2       = l.bounding_box.max.x();
-                auto rx2       = r.bounding_box.max.x();
-                auto inter_min = std::max(ly1, ry1);
-                auto inter_max = std::min(ly2, ry2);
-                auto inter_y   = inter_max - inter_min;
+    if (print_config.by_object_sequence_order.value == ByObjectSequenceOrder::Auto) {
+        // Spatial sort: front-to-back rows (increasing Y), left-to-right within each row.
+        // This ensures the toolhead never has to travel back over an already-printed object.
+        // Row membership: two objects are in the same row when their Y-ranges overlap by more
+        // than half the Y clearance, meaning they are close enough in Y that approach direction matters.
+        const float row_y_threshold = use_xy_clearance
+            ? 0.5f * print_config.extruder_clearance_y.value
+            : 0.5f * print_config.extruder_clearance_radius.value;
 
-                // 如果y方向的重合超过轮廓的膨胀量，说明两个物体在一行，应该先打左边的物体，即先比较二者的x坐标。
-                // If the overlap in the y direction exceeds the expansion of the contour, it means that the two objects are in a row and the object on the left should be hit first, that is, the x coordinates of the two should be compared first.
-                if (inter_y > scale_(0.5 * print.config().extruder_clearance_radius.value)) {
-                    if (std::max(rx1 - lx2, lx1 - rx2) < unsafe_dist) {
-                        if (lx1 > rx1) {
-                            left_right_pair.insert({j, i});
-                            BOOST_LOG_TRIVIAL(debug) << "in-a-row, print_instance " << r.print_instance->model_instance->get_object()->name << "(" << r.arrange_score << ")"
-                                                     << " -> " << l.print_instance->model_instance->get_object()->name << "(" << l.arrange_score << ")";
-                        } else {
-                            left_right_pair.insert({i, j});
-                            BOOST_LOG_TRIVIAL(debug) << "in-a-row, print_instance " << l.print_instance->model_instance->get_object()->name << "(" << l.arrange_score << ")"
-                                                     << " -> " << r.print_instance->model_instance->get_object()->name << "(" << r.arrange_score << ")";
-                        }
-                    }
+        for (size_t i = 0; i < print_instance_with_bounding_box.size(); i++) {
+            Point pt = print_instance_with_bounding_box[i].bounding_box.center();
+            // Primary sort key: Y position; secondary: X (half-weight keeps row ordering dominant).
+            print_instance_with_bounding_box[i].arrange_score = pt.y() + pt.x() / 2.0;
+        }
+
+        // Collect same-row pairs where the left object must print before the right.
+        struct VecHash {
+            size_t operator()(const Vec2i32 &v) const {
+                return std::hash<int32_t>()(v(0)) * 101 + std::hash<int32_t>()(v(1));
+            }
+        };
+        std::unordered_set<Vec2i32, VecHash> must_precede; // must_precede[{i,j}] => i prints before j
+        for (size_t i = 0; i < print_instance_with_bounding_box.size(); i++) {
+            auto &l = print_instance_with_bounding_box[i];
+            for (size_t j = i + 1; j < print_instance_with_bounding_box.size(); j++) {
+                auto &r        = print_instance_with_bounding_box[j];
+                auto inter_min = std::max(l.bounding_box.min.y(), r.bounding_box.min.y());
+                auto inter_max = std::min(l.bounding_box.max.y(), r.bounding_box.max.y());
+                // Same row: Y-ranges overlap by more than the row threshold.
+                if (inter_max - inter_min > scale_(row_y_threshold)) {
+                    // The left object (smaller X center) must print before the right.
+                    if (l.bounding_box.center().x() < r.bounding_box.center().x())
+                        must_precede.insert({(int32_t)i, (int32_t)j});
+                    else
+                        must_precede.insert({(int32_t)j, (int32_t)i});
                 }
-                if (l.height > hc1 && r.height < hc1) {
-                    // 当前物体超过了顶盖高度，必须后打
-                    left_right_pair.insert({j, i});
-                    BOOST_LOG_TRIVIAL(debug) << "height>hc1, print_instance " << r.print_instance->model_instance->get_object()->name << "(" << r.arrange_score << ")"
-                                             << " -> " << l.print_instance->model_instance->get_object()->name << "(" << l.arrange_score << ")";
-                }
-                else if (l.height > hc2 && l.height > r.height && l.arrange_score<r.arrange_score) {
-                    // 如果当前物体的高度超过滑杆，且比r高，就给它加一点代价，尽量让高的物体后打（只有物体高度超过滑杆时才有必要按高度来）
-                    if (l.arrange_score < r.arrange_score)
-                        l.arrange_score = r.arrange_score + 10;
-                    BOOST_LOG_TRIVIAL(debug) << "height>hc2, print_instance " << inst.print_instance->model_instance->get_object()->name
-                                             << ", right=" << r.print_instance->model_instance->get_object()->name << ", l.score: " << l.arrange_score
-                                             << ", r.score: " << r.arrange_score;
-                }
+                // Height constraints: objects exceeding clearance_height_to_lid must print last.
+                if (l.height > hc1 && r.height <= hc1)
+                    must_precede.insert({(int32_t)j, (int32_t)i}); // r before l
+                else if (r.height > hc1 && l.height <= hc1)
+                    must_precede.insert({(int32_t)i, (int32_t)j}); // l before r
+                // Objects taller than clearance_height_to_rod should print after shorter neighbours.
+                else if (l.height > hc2 && l.height > r.height)
+                    must_precede.insert({(int32_t)j, (int32_t)i});
+                else if (r.height > hc2 && r.height > l.height)
+                    must_precede.insert({(int32_t)i, (int32_t)j});
             }
         }
-    }
-    // 多做几次代价传播，因为前一次有些值没有更新。
-    // TODO 更好的办法是建立一颗树，一步到位。不过我暂时没精力搞，先就这样吧
-    for (int k=0;k<5;k++)
-    for (auto p : left_right_pair) {
-        auto &l = print_instance_with_bounding_box[p(0)];
-        auto &r = print_instance_with_bounding_box[p(1)];
-        if(r.arrange_score<l.arrange_score)
-            r.arrange_score = l.arrange_score + 10;
-    }
+        // Propagate score constraints: if i must precede j, ensure score(j) > score(i).
+        for (int pass = 0; pass < 5; pass++)
+            for (const auto &p : must_precede) {
+                auto &pre  = print_instance_with_bounding_box[p(0)];
+                auto &post = print_instance_with_bounding_box[p(1)];
+                if (post.arrange_score <= pre.arrange_score)
+                    post.arrange_score = pre.arrange_score + 1e7;
+            }
 
-    BOOST_LOG_TRIVIAL(debug) << "bed width: " << unscale_(bed_width) << ", unsafe_dist:" << unscale_(unsafe_dist) << ", height_to_lid: " << unscale_(hc1) << ", height_to_rod:" << unscale_(hc2) << ", final dependency:";
-    for (auto p : left_right_pair) {
-        auto &l         = print_instance_with_bounding_box[p(0)];
-        auto &r         = print_instance_with_bounding_box[p(1)];
-        BOOST_LOG_TRIVIAL(debug) << "print_instance " << I18N::translate(l.print_instance->model_instance->get_object()->name) << "(" << l.arrange_score << ")"
-                                 << " -> " << I18N::translate(r.print_instance->model_instance->get_object()->name) << "(" << r.arrange_score << ")";
+        std::sort(print_instance_with_bounding_box.begin(), print_instance_with_bounding_box.end(),
+            [](const print_instance_info &l, const print_instance_info &r) { return l.arrange_score < r.arrange_score; });
+    } else {
+        // Default: honour the object list order set by the user.
+        std::sort(print_instance_with_bounding_box.begin(), print_instance_with_bounding_box.end(),
+            [](const print_instance_info &l, const print_instance_info &r) { return l.object_index < r.object_index; });
     }
-    // sort the print instance
-    std::sort(print_instance_with_bounding_box.begin(), print_instance_with_bounding_box.end(),
-        [](print_instance_info& l, print_instance_info& r) {return l.arrange_score < r.arrange_score;});
 
     for (auto &inst : print_instance_with_bounding_box)
-        BOOST_LOG_TRIVIAL(debug) << "after sorting print_instance " << inst.print_instance->model_instance->get_object()->name << ", score: " << inst.arrange_score
-                                 << ", height:"<< inst.height;
-#else
-    // sort the print instance
-    std::sort(print_instance_with_bounding_box.begin(), print_instance_with_bounding_box.end(),
-        [](print_instance_info& l, print_instance_info& r) {return l.object_index < r.object_index;});
-
-    for (auto &inst : print_instance_with_bounding_box)
-        BOOST_LOG_TRIVIAL(debug) << "after sorting print_instance " << inst.print_instance->model_instance->get_object()->name << ", object_index: " << inst.object_index
-                                 << ", height:"<< inst.height;
-
-#endif
+        BOOST_LOG_TRIVIAL(debug) << "sequential print order: " << inst.print_instance->model_instance->get_object()->name
+                                 << ", score=" << inst.arrange_score << ", height=" << inst.height;
     // sequential_print_vertical_clearance_valid
     {
         // Ignore the last instance printed.
@@ -889,8 +854,8 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
             const float y_clearance_half = use_xy_clearance
                 ? 0.5f * print_config.extruder_clearance_y.value
                 : 0.5f * print_config.extruder_clearance_radius.value;
-            auto iy1 = orig_bbox.min.y() + scale_(y_clearance_half + object_skirt_offset);
-            auto iy2 = orig_bbox.max.y() - scale_(y_clearance_half + object_skirt_offset);
+            auto iy1 = orig_bbox.min.y() + (coord_t)scale_(y_clearance_half + object_skirt_offset);
+            auto iy2 = orig_bbox.max.y() - (coord_t)scale_(y_clearance_half + object_skirt_offset);
             (const_cast<ModelInstance*>(inst->model_instance))->arrange_order = k+1;
             double height = (k == (print_instance_count - 1))?printable_height:hc1;
             /*if (has_interlaced_objects) {

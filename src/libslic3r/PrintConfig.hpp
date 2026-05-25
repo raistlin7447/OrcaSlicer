@@ -165,6 +165,12 @@ enum class PrintOrder
     Count,
 };
 
+enum class ByObjectSequenceOrder {
+    Default,  // use model object list order
+    Auto,     // spatial sort: front-to-back rows, left-to-right within each row
+    Count,
+};
+
 enum class SlicingMode
 {
     // Regular, applying ClipperLib::pftNonZero rule when creating ExPolygons.
@@ -1508,8 +1514,9 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionBools,              enable_overhang_bridge_fan))
     ((ConfigOptionInts,               overhang_fan_speed))
     ((ConfigOptionEnumsGeneric,       overhang_fan_threshold))
-    ((ConfigOptionEnum<PrintSequence>,print_sequence))
-    ((ConfigOptionEnum<PrintOrder>,   print_order))
+    ((ConfigOptionEnum<PrintSequence>,        print_sequence))
+    ((ConfigOptionEnum<PrintOrder>,           print_order))
+    ((ConfigOptionEnum<ByObjectSequenceOrder>,by_object_sequence_order))
     ((ConfigOptionInts,               first_layer_print_sequence))
     ((ConfigOptionInts,               other_layers_print_sequence))
     ((ConfigOptionInt,                other_layers_print_sequence_nums))
