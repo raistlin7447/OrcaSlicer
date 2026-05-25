@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <queue>
 #include <unordered_set>
 #include <boost/filesystem/path.hpp>
 #include <boost/format.hpp>
@@ -792,17 +793,39 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
                     must_precede.insert({(int32_t)i, (int32_t)j});
             }
         }
-        // Propagate score constraints: if i must precede j, ensure score(j) > score(i).
-        for (int pass = 0; pass < 5; pass++)
-            for (const auto &p : must_precede) {
-                auto &pre  = print_instance_with_bounding_box[p(0)];
-                auto &post = print_instance_with_bounding_box[p(1)];
-                if (post.arrange_score <= pre.arrange_score)
-                    post.arrange_score = pre.arrange_score + 1e8;
-            }
+        // Topological sort (Kahn's algorithm) respecting must_precede constraints.
+        // A min-heap ordered by natural score breaks ties in favour of the preferred Y/X order.
+        const size_t n = print_instance_with_bounding_box.size();
+        std::vector<std::vector<size_t>> successors(n);
+        std::vector<int> in_degree(n, 0);
+        for (const auto &p : must_precede) {
+            successors[p(0)].push_back(p(1));
+            in_degree[p(1)]++;
+        }
 
-        std::sort(print_instance_with_bounding_box.begin(), print_instance_with_bounding_box.end(),
-            [](const print_instance_info &l, const print_instance_info &r) { return l.arrange_score < r.arrange_score; });
+        using Entry = std::pair<double, size_t>;
+        std::priority_queue<Entry, std::vector<Entry>, std::greater<Entry>> ready;
+        for (size_t i = 0; i < n; i++)
+            if (in_degree[i] == 0)
+                ready.push({print_instance_with_bounding_box[i].arrange_score, i});
+
+        std::vector<print_instance_info> ordered;
+        ordered.reserve(n);
+        while (!ready.empty()) {
+            auto [score, idx] = ready.top();
+            ready.pop();
+            ordered.push_back(std::move(print_instance_with_bounding_box[idx]));
+            for (size_t succ : successors[idx])
+                if (--in_degree[succ] == 0)
+                    ready.push({print_instance_with_bounding_box[succ].arrange_score, succ});
+        }
+        // If a cycle exists (conflicting constraints), append the remaining nodes in natural order.
+        if (ordered.size() < n) {
+            for (size_t i = 0; i < n; i++)
+                if (in_degree[i] > 0)
+                    ordered.push_back(std::move(print_instance_with_bounding_box[i]));
+        }
+        print_instance_with_bounding_box = std::move(ordered);
     } else {
         // Default: honour the object list order set by the user.
         std::sort(print_instance_with_bounding_box.begin(), print_instance_with_bounding_box.end(),
