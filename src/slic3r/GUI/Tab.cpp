@@ -86,7 +86,7 @@ int mode_to_selection(ConfigOptionMode mode)
 // Forward declaration for early use; definitions live later in this translation unit.
 static void validate_custom_gcode_cb(Tab* tab, const wxString& title, const t_config_option_key& opt_key, const boost::any& value);
 
-static const std::vector<std::string> plate_keys = { "curr_bed_type", "skirt_start_angle", "first_layer_print_sequence", "first_layer_sequence_choice", "other_layers_print_sequence", "other_layers_sequence_choice", "print_sequence", "spiral_mode"};
+static const std::vector<std::string> plate_keys = { "curr_bed_type", "skirt_start_angle", "first_layer_print_sequence", "first_layer_sequence_choice", "other_layers_print_sequence", "other_layers_sequence_choice", "print_sequence", "by_object_sequence_order", "spiral_mode"};
 
 void Tab::Highlighter::set_timer_owner(wxEvtHandler* owner, int timerid/* = wxID_ANY*/)
 {
@@ -3273,6 +3273,7 @@ void TabPrintPlate::build()
     optgroup->append_single_option_line("curr_bed_type");
     optgroup->append_single_option_line("skirt_start_angle");
     optgroup->append_single_option_line("print_sequence");
+    optgroup->append_single_option_line("by_object_sequence_order");
     optgroup->append_single_option_line("spiral_mode");
     optgroup->append_single_option_line("first_layer_sequence_choice");
     optgroup->append_single_option_line("other_layers_sequence_choice");
@@ -4509,7 +4510,7 @@ void TabPrinter::build_fff()
         optgroup->append_single_option_line("part_cooling_fan_min_pwm", "printer_basic_information_cooling_fan#minimum-non-zero-part-cooling-fan-speed");
 
         optgroup = page->new_optgroup(L("Extruder Clearance"), "param_extruder_clearance");
-        optgroup->append_single_option_line("extruder_clearance_type", "printer_basic_information_extruder_clearance#clearance-shape");
+        optgroup->append_single_option_line("extruder_clearance_type", "printer_basic_information_extruder_clearance#clearance-type");
         optgroup->append_single_option_line("extruder_clearance_radius", "printer_basic_information_extruder_clearance#radius");
         optgroup->append_single_option_line("extruder_clearance_x", "printer_basic_information_extruder_clearance#clearance-x");
         optgroup->append_single_option_line("extruder_clearance_y", "printer_basic_information_extruder_clearance#clearance-y");
@@ -5425,8 +5426,7 @@ void TabPrinter::toggle_options()
         auto gcf = m_config->option<ConfigOptionEnum<GCodeFlavor>>("gcode_flavor")->value;
         toggle_line("enable_power_loss_recovery", is_BBL_printer || gcf == gcfMarlinFirmware);
 
-        // Show radius or X/Y clearance fields depending on the clearance shape type
-        bool use_xy_clearance = m_config->opt_enum<ExtruderClearanceType>("extruder_clearance_type") == ExtruderClearanceType::XY;
+        const bool use_xy_clearance = m_config->opt_enum<ExtruderClearanceType>("extruder_clearance_type") == ExtruderClearanceType::XY;
         toggle_line("extruder_clearance_radius", !use_xy_clearance);
         toggle_line("extruder_clearance_x", use_xy_clearance);
         toggle_line("extruder_clearance_y", use_xy_clearance);
