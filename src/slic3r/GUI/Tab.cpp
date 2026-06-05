@@ -2879,8 +2879,11 @@ void TabPrint::update()
     m_update_cnt--;
 
     if (m_update_cnt==0) {
-        if (m_active_page && !(m_active_page->title() == "Dependencies"))
+        if (m_active_page && !(m_active_page->title() == "Dependencies")) {
             toggle_options();
+            m_active_page->update_visibility(m_mode, true); // apply toggle_line visibility changes
+            m_parent->Layout();
+        }
         // update() could be called during undo/redo execution
         // Update of objectList can cause a crash in this case (because m_objects doesn't match ObjectList)
         if (m_type != Preset::TYPE_MODEL && !wxGetApp().plater()->inside_snapshot_capture())
@@ -3333,6 +3336,8 @@ void TabPrintPlate::on_value_change(const std::string& opt_key, const boost::any
                 plate->set_other_layers_print_sequence({});
             if (k == "spiral_mode")
                 plate->set_spiral_vase_mode(false, true);
+            if (k == "by_object_sequence_order")
+                plate->config()->erase("by_object_sequence_order");
         }
         m_all_keys.erase(std::remove(m_all_keys.begin(), m_all_keys.end(), k), m_all_keys.end());
     }
@@ -3401,6 +3406,10 @@ void TabPrintPlate::on_value_change(const std::string& opt_key, const boost::any
             }
             if (k == "spiral_mode") {
                 plate->set_spiral_vase_mode(m_config->opt_bool("spiral_mode"), false);
+            }
+            if (k == "by_object_sequence_order") {
+                auto seq_order = m_config->opt_enum<ByObjectSequenceOrder>("by_object_sequence_order");
+                plate->config()->set_key_value("by_object_sequence_order", new ConfigOptionEnum<ByObjectSequenceOrder>(seq_order));
             }
         }
         m_all_keys = concat(m_all_keys, { k });

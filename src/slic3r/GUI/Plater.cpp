@@ -17662,6 +17662,14 @@ void Plater::open_platesettings_dialog(wxCommandEvent& evt) {
     else
         dlg.sync_print_seq(0);
 
+    {
+        int by_obj_order = 0; // Default
+        auto* opt = curr_plate->config()->option<ConfigOptionEnum<ByObjectSequenceOrder>>("by_object_sequence_order");
+        if (opt)
+            by_obj_order = int(opt->value);
+        dlg.sync_by_object_seq_order(by_obj_order);
+    }
+
     auto first_layer_print_seq = curr_plate->get_first_layer_print_sequence();
     if (first_layer_print_seq.empty())
         dlg.sync_first_layer_print_seq(0);
@@ -17715,12 +17723,21 @@ void Plater::open_platesettings_dialog(wxCommandEvent& evt) {
             curr_plate->set_spiral_vase_mode(false, true);
         }
 
+        // Save by_object_sequence_order only when print sequence is "By object"
+        if (ps_sel == int(PrintSequence::ByObject) + 1) {
+            int by_obj_order_sel = dlg.get_by_object_seq_order_choice();
+            curr_plate->config()->set_key_value("by_object_sequence_order",
+                new ConfigOptionEnum<ByObjectSequenceOrder>(ByObjectSequenceOrder(by_obj_order_sel)));
+        }
+
         update_project_dirty_from_presets();
         set_plater_dirty(true);
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format("select print sequence %1% for plate %2% at plate side") % ps_sel % plate_index;
         auto plate_config = *(curr_plate->config());
         wxGetApp().plater()->config_change_notification(plate_config, std::string("print_sequence"));
         update();
+        // Re-read the plate config into the params panel to reflect dialog changes
+        wxGetApp().obj_settings()->UpdateAndShow(true);
         wxGetApp().obj_list()->update_selections();
         });
     dlg.set_plate_name(from_u8(curr_plate->get_plate_name()));
