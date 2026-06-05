@@ -86,7 +86,22 @@ int mode_to_selection(ConfigOptionMode mode)
 // Forward declaration for early use; definitions live later in this translation unit.
 static void validate_custom_gcode_cb(Tab* tab, const wxString& title, const t_config_option_key& opt_key, const boost::any& value);
 
-static const std::vector<std::string> plate_keys = { "curr_bed_type", "skirt_start_angle", "first_layer_print_sequence", "first_layer_sequence_choice", "other_layers_print_sequence", "other_layers_sequence_choice", "print_sequence", "by_object_sequence_order", "spiral_mode"};
+// IMPORTANT: plate_keys must be sorted alphabetically.
+// update_model_config() uses lower_bound (binary search) on m_keys (which is built from plate_keys)
+// to filter which plate config keys get applied to m_config. An unsorted list causes lower_bound
+// to silently miss keys like "print_sequence" and "by_object_sequence_order", so plate-specific
+// overrides for those options are never loaded — the UI always shows the global preset value instead.
+static const std::vector<std::string> plate_keys = {
+    "by_object_sequence_order",
+    "curr_bed_type",
+    "first_layer_print_sequence",
+    "first_layer_sequence_choice",
+    "other_layers_print_sequence",
+    "other_layers_sequence_choice",
+    "print_sequence",
+    "skirt_start_angle",
+    "spiral_mode",
+};
 
 void Tab::Highlighter::set_timer_owner(wxEvtHandler* owner, int timerid/* = wxID_ANY*/)
 {
