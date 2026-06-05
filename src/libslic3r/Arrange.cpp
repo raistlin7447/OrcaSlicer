@@ -94,8 +94,12 @@ void update_arrange_params(ArrangeParams& params, const DynamicPrintConfig* prin
     // for sequential print, we need to inflate the bed because clearance is so large
     if (params.is_seq_print) {
         if (params.use_xy_clearance) {
-            params.bed_shrink_x -= params.clearance_x;
-            params.bed_shrink_y -= params.clearance_y;
+            // Halve the bed expansion to match the half-clearance Minkowski inflation applied to each
+            // object polygon.  The packing engine sees expanded polygons, so the effective exclusion
+            // zone between two objects is clearance_x (each side contributes clearance_x/2), matching
+            // the radius-mode convention where inflation = clearance_radius/2.
+            params.bed_shrink_x -= params.clearance_x / 2;
+            params.bed_shrink_y -= params.clearance_y / 2;
         } else {
             params.bed_shrink_x -= params.clearance_radius / 2;
             params.bed_shrink_y -= params.clearance_radius / 2;
@@ -113,10 +117,13 @@ void update_selected_items_inflation(ArrangePolygons& selected, const DynamicPri
         if (all_objects_are_short) {
             params.min_obj_distance = std::max(params.min_obj_distance, scaled(std::max(MAX_OUTER_NOZZLE_DIAMETER/2.f, params.object_skirt_offset*2)+0.001));
         } else if (params.use_xy_clearance) {
-            // Expand each footprint by the Minkowski sum with the clearance rectangle so the
-            // arrangement engine sees an exact asymmetric exclusion zone (instead of a uniform radius).
-            coord_t dx = scale_(params.clearance_x + 0.001f);
-            coord_t dy = scale_(params.clearance_y + 0.001f);
+            // Expand each footprint by the Minkowski sum with a half-clearance rectangle.
+            // Using clearance/2 per side keeps the convention consistent with radius mode:
+            //   radius mode  → inflation = clearance_radius/2  → gap between objects = clearance_radius
+            //   XY mode      → dx = clearance_x/2             → gap between objects = clearance_x  (in X)
+            //                   dy = clearance_y/2             → gap between objects = clearance_y  (in Y)
+            coord_t dx = scale_((params.clearance_x + 0.001f) / 2);
+            coord_t dy = scale_((params.clearance_y + 0.001f) / 2);
             for (auto& ap : selected)
                 ap.poly.contour = Geometry::minkowski_rect(ap.poly.contour, dx, dy);
             return; // inflation stays 0; libnest2d sees the pre-expanded footprints
@@ -151,8 +158,9 @@ void update_unselected_items_inflation(ArrangePolygons& unselected, const Dynami
     if (params.is_seq_print) {
         if (params.use_xy_clearance) {
             // Virtual exclusion zones are pre-expanded via Minkowski so the scalar exclusion_gap is not needed.
-            coord_t dx = scale_(params.clearance_x);
-            coord_t dy = scale_(params.clearance_y);
+            // Use half-clearance per side, consistent with the selected-items inflation above.
+            coord_t dx = scale_(params.clearance_x / 2);
+            coord_t dy = scale_(params.clearance_y / 2);
             for (auto& ap : unselected) {
                 if (ap.is_virt_object) {
                     ap.poly.translate(scaled(params.bed_shrink_x), scaled(params.bed_shrink_y));

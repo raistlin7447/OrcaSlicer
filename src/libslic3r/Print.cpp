@@ -652,8 +652,11 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
         const float obj_distance = print.is_all_objects_are_short()
             ? scale_(std::max(0.5f * MAX_OUTER_NOZZLE_DIAMETER, object_skirt_offset) - 0.1)
             : scale_(0.5f * print_config.extruder_clearance_radius.value + object_skirt_offset - 0.1);
-        const coord_t obj_dist_x = use_xy_clearance ? scale_(print_config.extruder_clearance_x.value + object_skirt_offset - 0.1f) : 0;
-        const coord_t obj_dist_y = use_xy_clearance ? scale_(print_config.extruder_clearance_y.value + object_skirt_offset - 0.1f) : 0;
+        // Use half-clearance per side: the arrange algorithm expands each polygon by clearance/2, so two
+        // adjacent polygons first touch when their gap equals clearance (not 2*clearance).  The -0.1 mm
+        // tolerance prevents false-positive collisions from floating-point rounding at the exact boundary.
+        const coord_t obj_dist_x = use_xy_clearance ? scale_((print_config.extruder_clearance_x.value + object_skirt_offset) / 2.f - 0.1f) : 0;
+        const coord_t obj_dist_y = use_xy_clearance ? scale_((print_config.extruder_clearance_y.value + object_skirt_offset) / 2.f - 0.1f) : 0;
 
         for (const PrintObject *print_object : print.objects()) {
             assert(! print_object->model_object()->instances.empty());
@@ -873,9 +876,9 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
             // 只需要考虑喷嘴到滑杆的偏移量，这个比整个工具头的碰撞半径要小得多
             // Only the offset from the nozzle to the slide bar needs to be considered, which is much smaller than the collision radius of the entire tool head.
             const auto& orig_bbox = print_instance_with_bounding_box[k].bounding_box;
-            // Undo only the Y half-clearance; in XY mode the bbox was expanded by minkowski_rect.
+            // Undo the Y expansion that minkowski_rect applied (clearance_y/2 per side in XY mode).
             const float y_clearance_half = use_xy_clearance
-                ? print_config.extruder_clearance_y.value
+                ? print_config.extruder_clearance_y.value / 2.f
                 : 0.5f * print_config.extruder_clearance_radius.value;
             auto iy1 = orig_bbox.min.y() + (coord_t)scale_(y_clearance_half + object_skirt_offset);
             auto iy2 = orig_bbox.max.y() - (coord_t)scale_(y_clearance_half + object_skirt_offset);
