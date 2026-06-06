@@ -637,7 +637,9 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
 
     auto [object_skirt_offset, _] = print.object_skirt_offset();
     // XY clearance mode uses asymmetric Minkowski expansion instead of a uniform offset radius.
-    const bool use_xy_clearance = !print.is_all_objects_are_short() &&
+    // Do NOT gate on is_all_objects_are_short(): when XY mode is explicitly chosen, the user's
+    // clearance_x/clearance_y values must be respected even for thin objects.
+    const bool use_xy_clearance =
         print_config.extruder_clearance_type.value == ExtruderClearanceType::XY;
     std::vector<struct print_instance_info> print_instance_with_bounding_box;
     {

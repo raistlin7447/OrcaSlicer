@@ -113,18 +113,19 @@ void update_selected_items_inflation(ArrangePolygons& selected, const DynamicPri
     BoundingBox bedbb = Polygon(bedpts).bounding_box();
     // set obj distance for auto seq_print
     if (params.is_seq_print) {
-        bool all_objects_are_short = std::all_of(selected.begin(), selected.end(), [&](ArrangePolygon& ap) { return ap.height < params.nozzle_height; });
-        if (all_objects_are_short) {
-            params.min_obj_distance = std::max(params.min_obj_distance, scaled(std::max(MAX_OUTER_NOZZLE_DIAMETER/2.f, params.object_skirt_offset*2)+0.001));
-        } else if (params.use_xy_clearance) {
-            // Expand each footprint by half the clearance rectangle, keeping the same gap semantics
-            // as radius mode (gap = clearance_x in X, clearance_y in Y).
+        if (params.use_xy_clearance) {
+            // XY mode: always use the explicit clearance_x/clearance_y values regardless of
+            // object height.  Do NOT gate on all_objects_are_short — the user chose XY mode
+            // deliberately, so the nozzle-diameter short-circuit must not override it.
             //
-            // We use the axis-aligned bounding box of the expanded shape rather than the exact
-            // Minkowski stadium (rounded rectangle).  The Minkowski of a convex polygon and a
-            // rectangle is a convex shape whose corners are rounded inward; libnest2d can exploit
-            // those indentations to stagger rows for denser packing, which produces irregular
-            // arrangements (e.g. 5+4+3 instead of the expected 4×3 grid).  Converting to the
+            // Expand each footprint by half the clearance rectangle, keeping the same gap
+            // semantics as radius mode (gap = clearance_x in X, clearance_y in Y).
+            //
+            // Use the axis-aligned bounding box of the expanded shape rather than the exact
+            // Minkowski stadium (rounded rectangle).  The Minkowski of a convex polygon with
+            // a rectangle produces a shape whose corners are rounded inward; libnest2d can
+            // exploit those indentations to stagger rows for denser packing, producing
+            // irregular arrangements (e.g. 5+4+3 instead of the expected 4×3 grid).  The
             // bounding box forces the packing engine to treat every item as a rectangle, which
             // tiles in a strict rectangular grid for any object shape.  The approximation is
             // conservative: the reserved zone is never smaller than the true clearance.
@@ -142,6 +143,11 @@ void update_selected_items_inflation(ArrangePolygons& selected, const DynamicPri
                 });
             }
             return; // inflation stays 0; libnest2d sees the pre-expanded footprints
+        }
+        // Radius mode: short objects only need nozzle-tip clearance (not the full head radius).
+        bool all_objects_are_short = std::all_of(selected.begin(), selected.end(), [&](ArrangePolygon& ap) { return ap.height < params.nozzle_height; });
+        if (all_objects_are_short) {
+            params.min_obj_distance = std::max(params.min_obj_distance, scaled(std::max(MAX_OUTER_NOZZLE_DIAMETER/2.f, params.object_skirt_offset*2)+0.001));
         } else {
             params.min_obj_distance = std::max(params.min_obj_distance, scaled(params.clearance_radius + 0.001)); // +0.001mm to avoid clearance check fail due to rounding error
         }

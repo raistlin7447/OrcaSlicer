@@ -5586,8 +5586,9 @@ void GLCanvas3D::update_sequential_clearance()
         m_sequential_print_clearance.m_hull_2d_cache.clear();
         auto [object_skirt_offset, _] = fff_print()->object_skirt_offset();
         const auto& cfg = fff_print()->config();
-        const bool use_xy = !fff_print()->is_all_objects_are_short() &&
-            cfg.extruder_clearance_type.value == ExtruderClearanceType::XY;
+        // Do NOT gate on is_all_objects_are_short(): when XY mode is explicitly chosen, always
+        // show the XY clearance rectangles regardless of object height.
+        const bool use_xy = cfg.extruder_clearance_type.value == ExtruderClearanceType::XY;
         const float shrink_factor = fff_print()->is_all_objects_are_short()
             ? scale_(std::max(0.5f * MAX_OUTER_NOZZLE_DIAMETER, object_skirt_offset) - 0.1)
             : scale_(0.5f * cfg.extruder_clearance_radius.value + object_skirt_offset - 0.1);
