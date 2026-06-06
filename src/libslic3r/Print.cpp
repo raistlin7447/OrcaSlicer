@@ -642,7 +642,8 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
     std::vector<struct print_instance_info> print_instance_with_bounding_box;
     {
         // sequential_print_horizontal_clearance_valid
-        Polygons convex_hulls_other;
+        Polygons convex_hulls_other;  // half-clearance hulls used for collision detection
+        Polygons display_hulls_other; // full-clearance hulls used for error display (match GLCanvas3D zones)
         if (polygons != nullptr)
             polygons->clear();
         std::vector<size_t> intersecting_idxs;
@@ -652,11 +653,15 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
         const float obj_distance = print.is_all_objects_are_short()
             ? scale_(std::max(0.5f * MAX_OUTER_NOZZLE_DIAMETER, object_skirt_offset) - 0.1)
             : scale_(0.5f * print_config.extruder_clearance_radius.value + object_skirt_offset - 0.1);
-        // Use half-clearance per side: the arrange algorithm expands each polygon by clearance/2, so two
-        // adjacent polygons first touch when their gap equals clearance (not 2*clearance).  The -0.1 mm
-        // tolerance prevents false-positive collisions from floating-point rounding at the exact boundary.
+        // Check hull (half clearance per side): matches arrange's bounding-box expansion so two objects
+        // placed exactly at the minimum gap do not trigger a false-positive collision.  The -0.1 mm
+        // tolerance absorbs floating-point rounding at the exact boundary.
         const coord_t obj_dist_x = use_xy_clearance ? scale_((print_config.extruder_clearance_x.value + object_skirt_offset) / 2.f - 0.1f) : 0;
         const coord_t obj_dist_y = use_xy_clearance ? scale_((print_config.extruder_clearance_y.value + object_skirt_offset) / 2.f - 0.1f) : 0;
+        // Display hull (full clearance per side): shown to the user when a collision is detected and
+        // matches the visual zones rendered by GLCanvas3D::_render_sequential_clearance().
+        const coord_t display_dist_x = use_xy_clearance ? scale_(print_config.extruder_clearance_x.value + object_skirt_offset) : 0;
+        const coord_t display_dist_y = use_xy_clearance ? scale_(print_config.extruder_clearance_y.value + object_skirt_offset) : 0;
 
         for (const PrintObject *print_object : print.objects()) {
             assert(! print_object->model_object()->instances.empty());
@@ -668,10 +673,14 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
                 Polygon convex_hull0 = print_object->model_object()->convex_hull_2d(Geometry::assemble_transform(
                             { 0.0, 0.0, instance.model_instance->get_offset().z() }, instance.model_instance->get_rotation(), instance.model_instance->get_scaling_factor(), instance.model_instance->get_mirror()));
 
-                Polygon convex_hull_no_offset = convex_hull0, convex_hull;
+                Polygon convex_hull_no_offset = convex_hull0, convex_hull, display_hull;
                 if (use_xy_clearance) {
+                    // Check hull: half-clearance Minkowski — avoids false positives for correctly arranged objects.
                     convex_hull = Geometry::minkowski_rect(convex_hull_no_offset, obj_dist_x, obj_dist_y);
                     convex_hull.translate(instance.shift - print_object->center_offset());
+                    // Display hull: full-clearance Minkowski — matches the visual zones in GLCanvas3D.
+                    display_hull = Geometry::minkowski_rect(convex_hull_no_offset, display_dist_x, display_dist_y);
+                    display_hull.translate(instance.shift - print_object->center_offset());
                 } else {
                     auto tmp = offset(convex_hull_no_offset, obj_distance, jtRound, scale_(0.1));
                     if (!tmp.empty()) { // tmp may be empty due to clipper's bug, see STUDIO-2452
@@ -679,6 +688,7 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
                         // instance.shift is a position of a centered object, while model object may not be centered.
                         // Convert the shift from the PrintObject's coordinates into ModelObject's coordinates by removing the centering offset.
                         convex_hull.translate(instance.shift - print_object->center_offset());
+                        display_hull = convex_hull; // radius mode: check and display hulls are identical
                     }
                 }
                 convex_hull_no_offset.translate(instance.shift - print_object->center_offset());
@@ -726,19 +736,22 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
                         if (has_exception) break;
                     }
                 }
-                struct print_instance_info print_info {&instance, convex_hull.bounding_box(), convex_hull};
+                // Store the display hull in print_instance_info so bounding_box and hull_polygon
+                // reflect the full-clearance zone (used for Y-overlap checks and height-polygon display).
+                struct print_instance_info print_info {&instance, display_hull.bounding_box(), display_hull};
                 print_info.height = instance.print_object->height();
                 print_info.object_index = find_object_index(print.model(), print_object->model_object());
                 print_instance_with_bounding_box.push_back(std::move(print_info));
                 convex_hulls_other.emplace_back(std::move(convex_hull));
+                display_hulls_other.emplace_back(std::move(display_hull));
             }
         }
         if (!intersecting_idxs.empty()) {
-            // use collected indices (inside convex_hulls_other) to update output
+            // use collected indices (inside display_hulls_other) to update output
             std::sort(intersecting_idxs.begin(), intersecting_idxs.end());
             intersecting_idxs.erase(std::unique(intersecting_idxs.begin(), intersecting_idxs.end()), intersecting_idxs.end());
             for (size_t i : intersecting_idxs) {
-                polygons->emplace_back(std::move(convex_hulls_other[i]));
+                polygons->emplace_back(std::move(display_hulls_other[i]));
             }
         }
     }
@@ -876,9 +889,12 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
             // 只需要考虑喷嘴到滑杆的偏移量，这个比整个工具头的碰撞半径要小得多
             // Only the offset from the nozzle to the slide bar needs to be considered, which is much smaller than the collision radius of the entire tool head.
             const auto& orig_bbox = print_instance_with_bounding_box[k].bounding_box;
-            // Undo the Y expansion that minkowski_rect applied (clearance_y/2 per side in XY mode).
+            // Undo the Y expansion applied by the display hull's minkowski_rect to recover the
+            // object's actual Y extent from the bounding box.
+            //   XY mode   → display_hull expanded by full clearance_y per side
+            //   radius mode → hull expanded by 0.5 * clearance_radius (obj_distance)
             const float y_clearance_half = use_xy_clearance
-                ? print_config.extruder_clearance_y.value / 2.f
+                ? print_config.extruder_clearance_y.value
                 : 0.5f * print_config.extruder_clearance_radius.value;
             auto iy1 = orig_bbox.min.y() + (coord_t)scale_(y_clearance_half + object_skirt_offset);
             auto iy2 = orig_bbox.max.y() - (coord_t)scale_(y_clearance_half + object_skirt_offset);

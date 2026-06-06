@@ -117,15 +117,30 @@ void update_selected_items_inflation(ArrangePolygons& selected, const DynamicPri
         if (all_objects_are_short) {
             params.min_obj_distance = std::max(params.min_obj_distance, scaled(std::max(MAX_OUTER_NOZZLE_DIAMETER/2.f, params.object_skirt_offset*2)+0.001));
         } else if (params.use_xy_clearance) {
-            // Expand each footprint by the Minkowski sum with a half-clearance rectangle.
-            // Using clearance/2 per side keeps the convention consistent with radius mode:
-            //   radius mode  → inflation = clearance_radius/2  → gap between objects = clearance_radius
-            //   XY mode      → dx = clearance_x/2             → gap between objects = clearance_x  (in X)
-            //                   dy = clearance_y/2             → gap between objects = clearance_y  (in Y)
+            // Expand each footprint by half the clearance rectangle, keeping the same gap semantics
+            // as radius mode (gap = clearance_x in X, clearance_y in Y).
+            //
+            // We use the axis-aligned bounding box of the expanded shape rather than the exact
+            // Minkowski stadium (rounded rectangle).  The Minkowski of a convex polygon and a
+            // rectangle is a convex shape whose corners are rounded inward; libnest2d can exploit
+            // those indentations to stagger rows for denser packing, which produces irregular
+            // arrangements (e.g. 5+4+3 instead of the expected 4×3 grid).  Converting to the
+            // bounding box forces the packing engine to treat every item as a rectangle, which
+            // tiles in a strict rectangular grid for any object shape.  The approximation is
+            // conservative: the reserved zone is never smaller than the true clearance.
             coord_t dx = scale_((params.clearance_x + 0.001f) / 2);
             coord_t dy = scale_((params.clearance_y + 0.001f) / 2);
-            for (auto& ap : selected)
-                ap.poly.contour = Geometry::minkowski_rect(ap.poly.contour, dx, dy);
+            for (auto& ap : selected) {
+                BoundingBox bb = ap.poly.contour.bounding_box();
+                bb.min -= Point(dx, dy);
+                bb.max += Point(dx, dy);
+                ap.poly.contour = Polygon({
+                    {bb.min.x(), bb.min.y()},
+                    {bb.max.x(), bb.min.y()},
+                    {bb.max.x(), bb.max.y()},
+                    {bb.min.x(), bb.max.y()}
+                });
+            }
             return; // inflation stays 0; libnest2d sees the pre-expanded footprints
         } else {
             params.min_obj_distance = std::max(params.min_obj_distance, scaled(params.clearance_radius + 0.001)); // +0.001mm to avoid clearance check fail due to rounding error
