@@ -2274,7 +2274,10 @@ void PrintConfigDef::init_fff_params()
     def->sidetext = L("mm");
     def->min = 0;
     def->mode = comAdvanced;
-    def->set_default_value(new ConfigOptionFloat(20));
+    // Default matches the extruder_clearance_radius default so XY mode is equivalent to
+    // radius mode out of the box. Profiles that set a custom radius but omit X/Y have these
+    // derived from their radius in PrintConfigDef::handle_legacy_composite().
+    def->set_default_value(new ConfigOptionFloat(40));
 
     def = this->add("extruder_clearance_y", coFloat);
     def->label = L("Clearance Y");
@@ -2282,7 +2285,7 @@ void PrintConfigDef::init_fff_params()
     def->sidetext = L("mm");
     def->min = 0;
     def->mode = comAdvanced;
-    def->set_default_value(new ConfigOptionFloat(20));
+    def->set_default_value(new ConfigOptionFloat(40));
 
     def = this->add("sequential_print_collision_override", coBool);
     def->label = L("Slice despite collision risk");
@@ -8372,6 +8375,18 @@ void PrintConfigDef::handle_legacy_composite(DynamicPrintConfig &config)
             }
         }
         config.set_key_value("wiping_volumes_use_custom_matrix", new ConfigOptionBool(custom));
+    }
+
+    // The rectangular X/Y extruder-clearance options were added after extruder_clearance_radius.
+    // Profiles that predate them define only the radius, so derive the X/Y clearance from it when
+    // absent. Setting clearance_x = clearance_y = radius makes XY mode match radius mode (both
+    // expand each object by clearance/2 per side) instead of falling back to the generic default.
+    if (config.has("extruder_clearance_radius")) {
+        const double radius = config.opt_float("extruder_clearance_radius");
+        if (!config.has("extruder_clearance_x"))
+            config.set_key_value("extruder_clearance_x", new ConfigOptionFloat(radius));
+        if (!config.has("extruder_clearance_y"))
+            config.set_key_value("extruder_clearance_y", new ConfigOptionFloat(radius));
     }
 }
 
