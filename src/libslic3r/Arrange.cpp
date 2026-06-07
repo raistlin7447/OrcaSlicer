@@ -107,6 +107,18 @@ void update_arrange_params(ArrangeParams& params, const DynamicPrintConfig* prin
     }
 }
 
+/// Build an axis-aligned rectangle centred at the origin with half-extents (hw, hh),
+/// pre-rotated by -rotation so that ArrangePolygon::transformed_poly() (which applies
+/// +rotation then +translation) reproduces the axis-aligned world-space rectangle exactly.
+/// This preserves ap.rotation for apply_arrange_result, which writes it back as an
+/// absolute Z-rotation, so the user-set rotation survives arrangement.
+static Polygon make_clearance_local_rect(coord_t hw, coord_t hh, double rotation)
+{
+    Polygon r({{ -hw,-hh }, { +hw,-hh }, { +hw,+hh }, { -hw,+hh }});
+    r.rotate(-rotation);
+    return r;
+}
+
 void update_selected_items_inflation(ArrangePolygons& selected, const DynamicPrintConfig* print_cfg, ArrangeParams& params) {
     // do not inflate brim_width. Objects are allowed to have overlapped brim.
     Points      bedpts = get_shrink_bedpts(print_cfg, params);
@@ -114,60 +126,29 @@ void update_selected_items_inflation(ArrangePolygons& selected, const DynamicPri
     // set obj distance for auto seq_print
     if (params.is_seq_print) {
         if (params.use_xy_clearance) {
-            // XY mode: always use the explicit clearance_x/clearance_y values regardless of
-            // object height.  Do NOT gate on all_objects_are_short — the user chose XY mode
-            // deliberately, so the nozzle-diameter short-circuit must not override it.
-            //
-            // Expand each footprint by half the clearance rectangle, keeping the same gap
-            // semantics as radius mode (gap = clearance_x in X, clearance_y in Y).
-            //
-            // Use the axis-aligned bounding box of the expanded shape rather than the exact
-            // Minkowski stadium (rounded rectangle).  The Minkowski of a convex polygon with
-            // a rectangle produces a shape whose corners are rounded inward; libnest2d can
-            // exploit those indentations to stagger rows for denser packing, producing
-            // irregular arrangements (e.g. 5+4+3 instead of the expected 4×3 grid).  The
-            // bounding box forces the packing engine to treat every item as a rectangle, which
-            // tiles in a strict rectangular grid for any object shape.  The approximation is
-            // conservative: the reserved zone is never smaller than the true clearance.
-            //
-            // clearance_half_x/y() is the shared per-side accessor (see ArrangeParams in Arrange.hpp).
-            // Print.cpp and GLCanvas3D.cpp use the same clearance/2 convention via print_config directly.
+            // XY mode: expand each footprint by half the clearance rectangle (clearance_half_x/y()
+            // is the shared per-side accessor).  We use the world-space axis-aligned bounding box
+            // rather than the exact Minkowski shape so the packer tiles objects in a strict
+            // rectangular grid instead of exploiting rounded corners for irregular staggering.
+            // ap.inflation is set to 0; the brim/tree-support block below adds only brim width
+            // on top (params.min_obj_distance stays 0, so it takes the brim branch).
+            // NOTE: falls through to the brim block below — do not return early.
             const coord_t dx = scale_(params.clearance_half_x() + 0.0005f);
             const coord_t dy = scale_(params.clearance_half_y() + 0.0005f);
             for (auto& ap : selected) {
-                // Use the WORLD-SPACE bounding box (after applying the instance's current rotation)
-                // so the clearance rectangle is always axis-aligned with the print bed,
-                // regardless of how the object is rotated.  This prevents the libnest2d packer
-                // from seeing a tilted rectangle and staggering rows.
                 BoundingBox bb = ap.transformed_poly().contour.bounding_box();
                 bb.min -= Point(dx, dy);
                 bb.max += Point(dx, dy);
-                // Center the clearance rectangle at origin, record the world-space center in
-                // ap.translation so the packer knows the object's current world position.
-                const Point  ctr = bb.center();
-                const coord_t hw = bb.max.x() - ctr.x();
-                const coord_t hh = bb.max.y() - ctr.y();
-                // Express the axis-aligned world-space rectangle in the polygon's object-local
-                // frame (pre-rotated by -ap.rotation) so that transformed_poly() — which applies
-                // ap.rotation then ap.translation — reproduces the world-space rectangle exactly.
-                // This preserves ap.rotation so that ModelInstance::apply_arrange_result, which
-                // calls set_rotation(Z, rotation) as an ABSOLUTE write, writes back the original
-                // user-set Z-rotation unchanged after arrangement.
-                Polygon local_rect({{ -hw,-hh }, { +hw,-hh }, { +hw,+hh }, { -hw,+hh }});
-                local_rect.rotate(-ap.rotation); // pre-rotate to cancel the instance rotation
-                ap.poly.contour = local_rect;
+                const Point   ctr = bb.center();
+                const coord_t hw  = bb.max.x() - ctr.x();
+                const coord_t hh  = bb.max.y() - ctr.y();
+                ap.poly.contour = make_clearance_local_rect(hw, hh, ap.rotation);
                 ap.poly.holes.clear();
                 ap.translation = ctr;
-                // ap.rotation intentionally preserved (see comment above).
-                // ap.inflation is 0 now; the brim/tree-support block below overwrites it
-                // with the correct brim-only value (clearance is already in the polygon).
+                // ap.rotation intentionally preserved — see make_clearance_local_rect.
                 ap.inflation   = 0;
             }
-            // Do NOT return early: fall through so the brim/tree-support inflation block
-            // below runs.  In XY mode ap.inflation starts at 0 (clearance encoded in poly);
-            // that block adds only brim width or tree-support branch radius on top,
-            // which is the correct remaining term.  params.min_obj_distance stays 0
-            // in the XY path so the block uses the brim-width branch, not the distance branch.
+            // Falls through to brim/tree-support block below.
         } else {
             // Radius mode: short objects only need nozzle-tip clearance (not the full head radius).
             bool all_objects_are_short = std::all_of(selected.begin(), selected.end(), [&](ArrangePolygon& ap) { return ap.height < params.nozzle_height; });
@@ -222,22 +203,17 @@ void update_unselected_items_inflation(ArrangePolygons& unselected, const Dynami
                 } else {
                     // Non-virtual already-placed objects also need the clearance rectangle so
                     // the packer does not position new objects inside an existing object's
-                    // extruder clearance zone.  Apply the same world-space bbox expansion and
-                    // local-coordinate re-expression as used for selected items (see
-                    // update_selected_items_inflation) so the object's Z-rotation is preserved
-                    // if apply_arrange_result is ever called for this item.
+                    // extruder clearance zone.  Same world-space bbox + local-frame technique
+                    // as update_selected_items_inflation; see make_clearance_local_rect.
                     BoundingBox bb = ap.transformed_poly().contour.bounding_box();
                     bb.min -= Point(dx, dy);
                     bb.max += Point(dx, dy);
-                    const Point  ctr = bb.center();
-                    const coord_t hw = bb.max.x() - ctr.x();
-                    const coord_t hh = bb.max.y() - ctr.y();
-                    Polygon local_rect({{ -hw,-hh }, { +hw,-hh }, { +hw,+hh }, { -hw,+hh }});
-                    local_rect.rotate(-ap.rotation);
-                    ap.poly.contour = local_rect;
+                    const Point   ctr = bb.center();
+                    const coord_t hw  = bb.max.x() - ctr.x();
+                    const coord_t hh  = bb.max.y() - ctr.y();
+                    ap.poly.contour = make_clearance_local_rect(hw, hh, ap.rotation);
                     ap.poly.holes.clear();
                     ap.translation = ctr;
-                    // ap.rotation preserved (see selected-items comment).
                 }
             }
         } else {

@@ -770,6 +770,10 @@ arrangement::ArrangeParams init_arrange_params(Plater *p)
     params.clearance_height_to_rod             = print_config.extruder_clearance_height_to_rod.value;
     params.clearance_height_to_lid             = print_config.extruder_clearance_height_to_lid.value;
     params.use_xy_clearance                    = print_config.extruder_clearance_type.value == ExtruderClearanceType::XY;
+    // clearance_x/y are full per-axis gaps; each side contributes clearance/2 downstream via
+    // clearance_half_x/y(), so the skirt offset is added once (covers both sides when halved).
+    // clearance_radius is also a full gap, but the radius path adds 2×skirt_offset because
+    // min_obj_distance = clearance_radius + 2×skirt_offset and each side then gets half of that.
     params.clearance_x                         = print_config.extruder_clearance_x.value + object_skirt_offset;
     params.clearance_y                         = print_config.extruder_clearance_y.value + object_skirt_offset;
     params.clearance_radius                    = print_config.extruder_clearance_radius.value + object_skirt_offset * 2;

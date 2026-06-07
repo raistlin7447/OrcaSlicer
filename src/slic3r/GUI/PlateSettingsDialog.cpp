@@ -426,28 +426,21 @@ PlateSettingsDialog::PlateSettingsDialog(wxWindow* parent, const wxString& title
 
     // By object order (visible only when Print Sequence is "By object")
     m_by_object_seq_order_choice = new ComboBox(this, wxID_ANY, wxEmptyString, wxDefaultPosition, wxSize(FromDIP(240), -1), 0, NULL, wxCB_READONLY);
-    m_by_object_seq_order_choice->Append(_L("Default"));
-    m_by_object_seq_order_choice->Append(_L("Auto"));
+    m_by_object_seq_order_choice->Append(_L("List order"));
+    m_by_object_seq_order_choice->Append(_L("Spatial order"));
     m_by_object_seq_order_choice->SetSelection(0);
     m_by_object_seq_order_txt = new wxStaticText(this, wxID_ANY, _L("By object order"));
     m_by_object_seq_order_txt->SetFont(Label::Body_14);
     top_sizer->Add(m_by_object_seq_order_txt, 0, wxALIGN_CENTER_VERTICAL | wxALIGN_LEFT | wxTOP | wxBOTTOM, FromDIP(5));
     top_sizer->Add(m_by_object_seq_order_choice, 0, wxALIGN_CENTER_VERTICAL | wxALIGN_RIGHT | wxTOP | wxBOTTOM, FromDIP(5));
 
-    // Show/hide by_object_seq_order based on print_seq selection
-    auto update_by_object_order_visibility = [this]() {
-        // Selection index 2 corresponds to "By object" (0=Same as Global, 1=By layer, 2=By object)
-        bool show = (m_print_seq_choice != nullptr && m_print_seq_choice->GetSelection() == int(PrintSequence::ByObject) + 1);
-        m_by_object_seq_order_txt->Show(show);
-        m_by_object_seq_order_choice->Show(show);
-        Layout();
-        Fit();
-    };
-    m_print_seq_choice->Bind(wxEVT_COMBOBOX, [update_by_object_order_visibility](auto& e) {
-        update_by_object_order_visibility();
+    // Show/hide by_object_seq_order based on print_seq selection.
+    // Selection index 2 corresponds to "By object" (0=Same as Global, 1=By layer, 2=By object).
+    m_print_seq_choice->Bind(wxEVT_COMBOBOX, [this](auto& e) {
+        show_by_object_seq_order(m_print_seq_choice->GetSelection() == int(PrintSequence::ByObject) + 1);
         e.Skip();
     });
-    update_by_object_order_visibility(); // apply initial state
+    show_by_object_seq_order(m_print_seq_choice->GetSelection() == int(PrintSequence::ByObject) + 1);
 
     // Spiral mode
     m_spiral_mode_choice = new ComboBox(this, wxID_ANY, wxEmptyString, wxDefaultPosition, wxSize(FromDIP(240), -1), 0, NULL, wxCB_READONLY);
@@ -565,15 +558,18 @@ void PlateSettingsDialog::sync_print_seq(int print_seq)
 {
     if (m_print_seq_choice != nullptr) {
         m_print_seq_choice->SetSelection(print_seq);
-        // Synchronously update by_object_order visibility to match
-        bool show = (print_seq == int(PrintSequence::ByObject) + 1);
-        if (m_by_object_seq_order_txt)
-            m_by_object_seq_order_txt->Show(show);
-        if (m_by_object_seq_order_choice)
-            m_by_object_seq_order_choice->Show(show);
-        Layout();
-        Fit();
+        show_by_object_seq_order(print_seq == int(PrintSequence::ByObject) + 1);
     }
+}
+
+void PlateSettingsDialog::show_by_object_seq_order(bool show)
+{
+    if (m_by_object_seq_order_txt)
+        m_by_object_seq_order_txt->Show(show);
+    if (m_by_object_seq_order_choice)
+        m_by_object_seq_order_choice->Show(show);
+    Layout();
+    Fit();
 }
 
 void PlateSettingsDialog::sync_by_object_seq_order(int by_object_seq_order)

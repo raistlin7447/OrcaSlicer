@@ -70,6 +70,7 @@ namespace Slic3r {
         int m_nozzle_height_to_rod;
         float m_clearance_x;
         float m_clearance_y;
+        bool  m_use_xy_clearance{false};
         std::optional<int> m_liftable_extruder_id;
         std::optional<int> m_extruder_height_gap;
 

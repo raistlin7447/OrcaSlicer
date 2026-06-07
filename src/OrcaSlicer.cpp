@@ -1273,7 +1273,7 @@ int CLI::run(int argc, char **argv)
     int current_printable_width, current_printable_depth, current_printable_height, shrink_to_new_bed = 0;
     int old_printable_height = 0, old_printable_width = 0, old_printable_depth = 0;
     Pointfs old_printable_area, old_exclude_area;
-    float old_max_radius = 0.f, old_height_to_rod = 0.f, old_height_to_lid = 0.f;
+    float old_effective_clearance = 0.f, old_height_to_rod = 0.f, old_height_to_lid = 0.f;
     std::vector<double> old_max_layer_height, old_min_layer_height;
     std::string outfile_dir              =  m_config.opt_string("outputdir", true);
     const std::vector<std::string>              &load_configs               = m_config.option<ConfigOptionStrings>("load_settings", true)->values;
@@ -1719,13 +1719,24 @@ int CLI::run(int argc, char **argv)
                     if (config.option<ConfigOptionFloat>("extruder_clearance_height_to_lid"))
                         old_height_to_lid = config.opt_float("extruder_clearance_height_to_lid");
                     if (config.option<ConfigOptionFloat>("extruder_clearance_radius"))
-                        old_max_radius = config.opt_float("extruder_clearance_radius");
+                        old_effective_clearance = config.opt_float("extruder_clearance_radius");
+                    // If the saved project used XY-mode clearance, use max(x,y) — the same
+                    // formula as the runtime effective_clearance computation — to avoid a
+                    // spurious re-arrange when loading an XY-mode file into an XY-mode printer.
+                    {
+                        const auto* xy_type = config.option<ConfigOptionEnum<ExtruderClearanceType>>("extruder_clearance_type");
+                        if (xy_type && xy_type->value == ExtruderClearanceType::XY &&
+                            config.option<ConfigOptionFloat>("extruder_clearance_x") &&
+                            config.option<ConfigOptionFloat>("extruder_clearance_y"))
+                            old_effective_clearance = std::max(config.opt_float("extruder_clearance_x"),
+                                                               config.opt_float("extruder_clearance_y"));
+                    }
                     if (config.option<ConfigOptionFloats>("max_layer_height"))
                         old_max_layer_height = config.option<ConfigOptionFloats>("max_layer_height")->values;
                     if (config.option<ConfigOptionFloats>("min_layer_height"))
                         old_min_layer_height = config.option<ConfigOptionFloats>("min_layer_height")->values;
                     BOOST_LOG_TRIVIAL(info) << boost::format("old printable size from 3mf: {%1%, %2%, %3%}")%old_printable_width %old_printable_depth %old_printable_height;
-                    BOOST_LOG_TRIVIAL(info) << boost::format("old extruder_clearance_height_to_rod %1%, extruder_clearance_height_to_lid %2%, extruder_clearance_radius %3%}")%old_height_to_rod %old_height_to_lid %old_max_radius;
+                    BOOST_LOG_TRIVIAL(info) << boost::format("old extruder_clearance_height_to_rod %1%, extruder_clearance_height_to_lid %2%, old_effective_clearance %3%}")%old_height_to_rod %old_height_to_lid %old_effective_clearance;
                 }
                 else
                 {
@@ -4550,12 +4561,12 @@ int CLI::run(int argc, char **argv)
     {
         if (((old_height_to_rod != 0.f) && (old_height_to_rod != height_to_rod))
             || ((old_height_to_lid != 0.f) && (old_height_to_lid != height_to_lid))
-            || ((old_max_radius != 0.f) && (old_max_radius != effective_clearance)))
+            || ((old_effective_clearance != 0.f) && (old_effective_clearance != effective_clearance)))
         {
             if (is_seq_print_for_curr_plate) {
                 need_arrange = true;
-                BOOST_LOG_TRIVIAL(info) << boost::format("old_height_to_rod %1%, old_height_to_lid %2%,  old_max_radius %3%, current height_to_rod %4%, height_to_lid %5%, effective_clearance %6%, need arrange!")
-                    %old_height_to_rod %old_height_to_lid %old_max_radius %height_to_rod %height_to_lid %effective_clearance;
+                BOOST_LOG_TRIVIAL(info) << boost::format("old_height_to_rod %1%, old_height_to_lid %2%, old_effective_clearance %3%, current height_to_rod %4%, height_to_lid %5%, effective_clearance %6%, need arrange!")
+                    %old_height_to_rod %old_height_to_lid %old_effective_clearance %height_to_rod %height_to_lid %effective_clearance;
             }
         }
     }

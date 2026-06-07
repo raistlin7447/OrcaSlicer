@@ -1861,13 +1861,14 @@ void PrintConfigDef::init_fff_params()
 
     def = this->add("by_object_sequence_order", coEnum);
     def->label = L("By object order");
-    def->tooltip = L("Print order for by-object mode. \"Auto\" sorts objects spatially "
-        "(front-to-back, left-to-right within each row) so the toolhead never traverses over an already-printed object.");
+    def->tooltip = L("Print order for by-object sequential mode. "
+        "\"List order\" uses the object list order as-is. "
+        "\"Spatial order\" sorts objects front-to-back and left-to-right so the toolhead never traverses over an already-printed object.");
     def->enum_keys_map = &ConfigOptionEnum<ByObjectSequenceOrder>::get_enum_values();
     def->enum_values.push_back("default");
     def->enum_values.push_back("auto");
-    def->enum_labels.push_back(L("Default"));
-    def->enum_labels.push_back(L("Auto"));
+    def->enum_labels.push_back(L("List order"));
+    def->enum_labels.push_back(L("Spatial order"));
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionEnum<ByObjectSequenceOrder>(ByObjectSequenceOrder::Default));
 

@@ -167,6 +167,8 @@ public:
 protected:
     void add_layers();
     void delete_layers();
+    /// Show or hide the by-object-order row and re-layout the dialog.
+    void show_by_object_seq_order(bool show);
 
 protected:
     ComboBox* m_bed_type_choice { nullptr };
