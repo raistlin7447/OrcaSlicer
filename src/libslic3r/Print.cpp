@@ -695,6 +695,14 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
                     }
                 }
                 convex_hull_no_offset.translate(instance.shift - print_object->center_offset());
+                // Fallback for Clipper offset failure (STUDIO-2452, radius mode only): guard
+                // against empty hulls so print_instance_info always receives a valid bounding_box.
+                // An empty display_hull would produce a degenerate BoundingBox, making iy1==iy2
+                // in the vertical-clearance check and silently skipping the too-tall warning.
+                if (!use_xy_clearance) {
+                    if (convex_hull.empty()) convex_hull = convex_hull_no_offset;
+                    if (display_hull.empty()) display_hull = convex_hull;
+                }
                 //juedge the exclude area
                 if (!intersection(exclude_polys, convex_hull_no_offset).empty()) {
                     if (single_object_exception.string.empty()) {
@@ -838,11 +846,20 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
                 if (--in_degree[succ] == 0)
                     ready.push({print_instance_with_bounding_box[succ].arrange_score, succ});
         }
-        // If a cycle exists (conflicting constraints), append the remaining nodes in natural order.
+        // If a cycle exists (conflicting height + row constraints), fall back to
+        // arrange_score order for the cycle members so the result is at least
+        // deterministic and close to the preferred spatial order.
         if (ordered.size() < n) {
+            BOOST_LOG_TRIVIAL(warning) << "sequential print: cyclic ordering constraints detected; "
+                << (n - ordered.size()) << " object(s) placed in score-based fallback order.";
+            std::vector<std::pair<double, size_t>> cycle_nodes;
+            cycle_nodes.reserve(n - ordered.size());
             for (size_t i = 0; i < n; i++)
                 if (in_degree[i] > 0)
-                    ordered.push_back(std::move(print_instance_with_bounding_box[i]));
+                    cycle_nodes.push_back({print_instance_with_bounding_box[i].arrange_score, i});
+            std::sort(cycle_nodes.begin(), cycle_nodes.end());
+            for (auto& [score, i] : cycle_nodes)
+                ordered.push_back(std::move(print_instance_with_bounding_box[i]));
         }
         print_instance_with_bounding_box = std::move(ordered);
     } else {
@@ -3666,11 +3683,16 @@ std::tuple<float, float> Print::object_skirt_offset(double margin_height) const
     else if (config().draft_shield == dsEnabled || config().skirt_height * max_layer_height > config().nozzle_height - margin_height)
         object_skirt_offset = config().skirt_distance + line_width;
     else if (config().extruder_clearance_type.value == ExtruderClearanceType::XY) {
-        // The skirt must fit within the tighter clearance half-extent; use the smaller axis as the conservative limit.
-        float min_half_xy = std::min(config().extruder_clearance_x.value, config().extruder_clearance_y.value);
-        if (config().skirt_distance + object_skirt_witdh > min_half_xy)
-            object_skirt_offset = config().skirt_distance + object_skirt_witdh - min_half_xy;
-        else
+        // Compute per-axis skirt overflow and take the maximum (most restrictive).
+        // The per-side clearance in X is clearance_x/2 and in Y is clearance_y/2 —
+        // consistent with radius mode, which uses clearance_radius/2 as its threshold.
+        const float half_x    = config().extruder_clearance_x.value / 2.f;
+        const float half_y    = config().extruder_clearance_y.value / 2.f;
+        const float skirt_ext = config().skirt_distance + object_skirt_witdh;
+        const float offset_x  = skirt_ext > half_x ? skirt_ext - half_x : 0.f;
+        const float offset_y  = skirt_ext > half_y ? skirt_ext - half_y : 0.f;
+        object_skirt_offset   = std::max(offset_x, offset_y);
+        if (object_skirt_offset == 0.f)
             return std::make_tuple(0, 0);
     } else if (config().skirt_distance + object_skirt_witdh > config().extruder_clearance_radius/2)
         object_skirt_offset = (config().skirt_distance + object_skirt_witdh - config().extruder_clearance_radius/2);

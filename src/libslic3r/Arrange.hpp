@@ -136,6 +136,14 @@ struct ArrangeParams {
     float clearance_x = 0;
     float clearance_y = 0;
     bool  use_xy_clearance = false;
+
+    /// Per-side half-clearance accessors for XY mode.
+    /// Each object's footprint is inflated by clearance_half_x()/clearance_half_y() on each side
+    /// so that two adjacent objects' zones span exactly the full clearance gap.
+    /// Use these in Arrange.cpp instead of inlining clearance_x/2 to keep Arrange.cpp,
+    /// Print.cpp, and GLCanvas3D.cpp on the same convention and prevent drift.
+    float clearance_half_x() const { return clearance_x * 0.5f; }
+    float clearance_half_y() const { return clearance_y * 0.5f; }
     float object_skirt_offset = 0;
     float nozzle_height = 0;
     float printable_height = 256.0;

@@ -129,8 +129,11 @@ void update_selected_items_inflation(ArrangePolygons& selected, const DynamicPri
             // bounding box forces the packing engine to treat every item as a rectangle, which
             // tiles in a strict rectangular grid for any object shape.  The approximation is
             // conservative: the reserved zone is never smaller than the true clearance.
-            const coord_t dx = scale_((params.clearance_x + 0.001f) / 2);
-            const coord_t dy = scale_((params.clearance_y + 0.001f) / 2);
+            //
+            // clearance_half_x/y() is the shared per-side accessor (see ArrangeParams in Arrange.hpp).
+            // Print.cpp and GLCanvas3D.cpp use the same clearance/2 convention via print_config directly.
+            const coord_t dx = scale_(params.clearance_half_x() + 0.0005f);
+            const coord_t dy = scale_(params.clearance_half_y() + 0.0005f);
             for (auto& ap : selected) {
                 // Use the WORLD-SPACE bounding box (after applying the instance's current rotation)
                 // so the clearance rectangle is always axis-aligned with the print bed,
@@ -139,30 +142,40 @@ void update_selected_items_inflation(ArrangePolygons& selected, const DynamicPri
                 BoundingBox bb = ap.transformed_poly().contour.bounding_box();
                 bb.min -= Point(dx, dy);
                 bb.max += Point(dx, dy);
-                // Center the rectangle at origin; store the world-space center in translation
-                // so the packer knows where the object currently lives (it will move it anyway).
+                // Center the clearance rectangle at origin, record the world-space center in
+                // ap.translation so the packer knows the object's current world position.
                 const Point  ctr = bb.center();
                 const coord_t hw = bb.max.x() - ctr.x();
                 const coord_t hh = bb.max.y() - ctr.y();
-                ap.poly.contour = Polygon({ {-hw,-hh}, {+hw,-hh}, {+hw,+hh}, {-hw,+hh} });
+                // Express the axis-aligned world-space rectangle in the polygon's object-local
+                // frame (pre-rotated by -ap.rotation) so that transformed_poly() — which applies
+                // ap.rotation then ap.translation — reproduces the world-space rectangle exactly.
+                // This preserves ap.rotation so that ModelInstance::apply_arrange_result, which
+                // calls set_rotation(Z, rotation) as an ABSOLUTE write, writes back the original
+                // user-set Z-rotation unchanged after arrangement.
+                Polygon local_rect({{ -hw,-hh }, { +hw,-hh }, { +hw,+hh }, { -hw,+hh }});
+                local_rect.rotate(-ap.rotation); // pre-rotate to cancel the instance rotation
+                ap.poly.contour = local_rect;
                 ap.poly.holes.clear();
-                // Reset rotation to 0: the rectangle is already expressed in bed coordinates,
-                // so no further rotation should be applied when the packer evaluates the shape.
-                // (For circular objects this is a no-op; for non-circular objects the world-space
-                // bbox already captures the rotated footprint conservatively.)
                 ap.translation = ctr;
-                ap.rotation    = 0.0;
-                // Zero any residual inflation; the bbox expansion already includes all clearance.
+                // ap.rotation intentionally preserved (see comment above).
+                // ap.inflation is 0 now; the brim/tree-support block below overwrites it
+                // with the correct brim-only value (clearance is already in the polygon).
                 ap.inflation   = 0;
             }
-            return; // libnest2d sees axis-aligned rectangular footprints with zero inflation
-        }
-        // Radius mode: short objects only need nozzle-tip clearance (not the full head radius).
-        bool all_objects_are_short = std::all_of(selected.begin(), selected.end(), [&](ArrangePolygon& ap) { return ap.height < params.nozzle_height; });
-        if (all_objects_are_short) {
-            params.min_obj_distance = std::max(params.min_obj_distance, scaled(std::max(MAX_OUTER_NOZZLE_DIAMETER/2.f, params.object_skirt_offset*2)+0.001));
+            // Do NOT return early: fall through so the brim/tree-support inflation block
+            // below runs.  In XY mode ap.inflation starts at 0 (clearance encoded in poly);
+            // that block adds only brim width or tree-support branch radius on top,
+            // which is the correct remaining term.  params.min_obj_distance stays 0
+            // in the XY path so the block uses the brim-width branch, not the distance branch.
         } else {
-            params.min_obj_distance = std::max(params.min_obj_distance, scaled(params.clearance_radius + 0.001)); // +0.001mm to avoid clearance check fail due to rounding error
+            // Radius mode: short objects only need nozzle-tip clearance (not the full head radius).
+            bool all_objects_are_short = std::all_of(selected.begin(), selected.end(), [&](ArrangePolygon& ap) { return ap.height < params.nozzle_height; });
+            if (all_objects_are_short) {
+                params.min_obj_distance = std::max(params.min_obj_distance, scaled(std::max(MAX_OUTER_NOZZLE_DIAMETER/2.f, params.object_skirt_offset*2)+0.001));
+            } else {
+                params.min_obj_distance = std::max(params.min_obj_distance, scaled(params.clearance_radius + 0.001)); // +0.001mm to avoid clearance check fail due to rounding error
+            }
         }
     }
     double brim_max = 0;
@@ -191,15 +204,40 @@ void update_unselected_items_inflation(ArrangePolygons& unselected, const Dynami
     float exclusion_gap = 1.f;
     if (params.is_seq_print) {
         if (params.use_xy_clearance) {
-            // Virtual exclusion zones are pre-expanded via Minkowski so the scalar exclusion_gap is not needed.
-            // Use half-clearance per side, consistent with the selected-items inflation above.
-            coord_t dx = scale_(params.clearance_x / 2);
-            coord_t dy = scale_(params.clearance_y / 2);
+            // All unselected items (virtual exclusion zones AND already-placed objects) need
+            // half-clearance expansion so the packer keeps the full clearance gap around them.
+            // Use clearance_half_x/y() — the same shared accessor used for selected items.
+            const coord_t dx = scale_(params.clearance_half_x());
+            const coord_t dy = scale_(params.clearance_half_y());
             for (auto& ap : unselected) {
                 if (ap.is_virt_object) {
                     ap.poly.translate(scaled(params.bed_shrink_x), scaled(params.bed_shrink_y));
-                    if (!ap.is_extrusion_cali_object)
+                    if (!ap.is_extrusion_cali_object) {
                         ap.poly.contour = Geometry::minkowski_rect(ap.poly.contour, dx, dy);
+                        // Clear stale holes: minkowski_rect replaces only the contour, so any
+                        // pre-existing holes would be geometrically inconsistent with the new
+                        // expanded contour (latent bug if a future virtual-object ever has holes).
+                        ap.poly.holes.clear();
+                    }
+                } else {
+                    // Non-virtual already-placed objects also need the clearance rectangle so
+                    // the packer does not position new objects inside an existing object's
+                    // extruder clearance zone.  Apply the same world-space bbox expansion and
+                    // local-coordinate re-expression as used for selected items (see
+                    // update_selected_items_inflation) so the object's Z-rotation is preserved
+                    // if apply_arrange_result is ever called for this item.
+                    BoundingBox bb = ap.transformed_poly().contour.bounding_box();
+                    bb.min -= Point(dx, dy);
+                    bb.max += Point(dx, dy);
+                    const Point  ctr = bb.center();
+                    const coord_t hw = bb.max.x() - ctr.x();
+                    const coord_t hh = bb.max.y() - ctr.y();
+                    Polygon local_rect({{ -hw,-hh }, { +hw,-hh }, { +hw,+hh }, { -hw,+hh }});
+                    local_rect.rotate(-ap.rotation);
+                    ap.poly.contour = local_rect;
+                    ap.poly.holes.clear();
+                    ap.translation = ctr;
+                    // ap.rotation preserved (see selected-items comment).
                 }
             }
         } else {
