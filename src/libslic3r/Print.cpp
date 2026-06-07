@@ -660,10 +660,11 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
         // tolerance absorbs floating-point rounding at the exact boundary.
         const coord_t obj_dist_x = use_xy_clearance ? scale_((print_config.extruder_clearance_x.value + object_skirt_offset) / 2.f - 0.1f) : 0;
         const coord_t obj_dist_y = use_xy_clearance ? scale_((print_config.extruder_clearance_y.value + object_skirt_offset) / 2.f - 0.1f) : 0;
-        // Display hull (full clearance per side): shown to the user when a collision is detected and
-        // matches the visual zones rendered by GLCanvas3D::_render_sequential_clearance().
-        const coord_t display_dist_x = use_xy_clearance ? scale_(print_config.extruder_clearance_x.value + object_skirt_offset) : 0;
-        const coord_t display_dist_y = use_xy_clearance ? scale_(print_config.extruder_clearance_y.value + object_skirt_offset) : 0;
+        // Display hull (half clearance per side): matches the visual zones rendered by
+        // GLCanvas3D::_render_sequential_clearance(), which also uses clearance/2 per side so
+        // that two touching zones = exactly the minimum clearance gap between objects.
+        const coord_t display_dist_x = use_xy_clearance ? scale_((print_config.extruder_clearance_x.value + object_skirt_offset) / 2.f) : 0;
+        const coord_t display_dist_y = use_xy_clearance ? scale_((print_config.extruder_clearance_y.value + object_skirt_offset) / 2.f) : 0;
 
         for (const PrintObject *print_object : print.objects()) {
             assert(! print_object->model_object()->instances.empty());
@@ -893,10 +894,12 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
             const auto& orig_bbox = print_instance_with_bounding_box[k].bounding_box;
             // Undo the Y expansion applied by the display hull's minkowski_rect to recover the
             // object's actual Y extent from the bounding box.
-            //   XY mode   → display_hull expanded by full clearance_y per side
+            //   XY mode   → display_hull expanded by clearance_y/2 per side (half-clearance convention)
             //   radius mode → hull expanded by 0.5 * clearance_radius (obj_distance)
+            // Formula: y_clearance_half = (clearance_y - object_skirt_offset) / 2  so that
+            //   y_clearance_half + object_skirt_offset = (clearance_y + object_skirt_offset) / 2 = display_dist_y/scale_
             const float y_clearance_half = use_xy_clearance
-                ? print_config.extruder_clearance_y.value
+                ? 0.5f * (print_config.extruder_clearance_y.value - static_cast<float>(object_skirt_offset))
                 : 0.5f * print_config.extruder_clearance_radius.value;
             auto iy1 = orig_bbox.min.y() + (coord_t)scale_(y_clearance_half + object_skirt_offset);
             auto iy2 = orig_bbox.max.y() - (coord_t)scale_(y_clearance_half + object_skirt_offset);

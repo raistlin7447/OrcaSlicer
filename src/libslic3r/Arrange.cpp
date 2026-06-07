@@ -129,20 +129,33 @@ void update_selected_items_inflation(ArrangePolygons& selected, const DynamicPri
             // bounding box forces the packing engine to treat every item as a rectangle, which
             // tiles in a strict rectangular grid for any object shape.  The approximation is
             // conservative: the reserved zone is never smaller than the true clearance.
-            coord_t dx = scale_((params.clearance_x + 0.001f) / 2);
-            coord_t dy = scale_((params.clearance_y + 0.001f) / 2);
+            const coord_t dx = scale_((params.clearance_x + 0.001f) / 2);
+            const coord_t dy = scale_((params.clearance_y + 0.001f) / 2);
             for (auto& ap : selected) {
-                BoundingBox bb = ap.poly.contour.bounding_box();
+                // Use the WORLD-SPACE bounding box (after applying the instance's current rotation)
+                // so the clearance rectangle is always axis-aligned with the print bed,
+                // regardless of how the object is rotated.  This prevents the libnest2d packer
+                // from seeing a tilted rectangle and staggering rows.
+                BoundingBox bb = ap.transformed_poly().contour.bounding_box();
                 bb.min -= Point(dx, dy);
                 bb.max += Point(dx, dy);
-                ap.poly.contour = Polygon({
-                    {bb.min.x(), bb.min.y()},
-                    {bb.max.x(), bb.min.y()},
-                    {bb.max.x(), bb.max.y()},
-                    {bb.min.x(), bb.max.y()}
-                });
+                // Center the rectangle at origin; store the world-space center in translation
+                // so the packer knows where the object currently lives (it will move it anyway).
+                const Point  ctr = bb.center();
+                const coord_t hw = bb.max.x() - ctr.x();
+                const coord_t hh = bb.max.y() - ctr.y();
+                ap.poly.contour = Polygon({ {-hw,-hh}, {+hw,-hh}, {+hw,+hh}, {-hw,+hh} });
+                ap.poly.holes.clear();
+                // Reset rotation to 0: the rectangle is already expressed in bed coordinates,
+                // so no further rotation should be applied when the packer evaluates the shape.
+                // (For circular objects this is a no-op; for non-circular objects the world-space
+                // bbox already captures the rotated footprint conservatively.)
+                ap.translation = ctr;
+                ap.rotation    = 0.0;
+                // Zero any residual inflation; the bbox expansion already includes all clearance.
+                ap.inflation   = 0;
             }
-            return; // inflation stays 0; libnest2d sees the pre-expanded footprints
+            return; // libnest2d sees axis-aligned rectangular footprints with zero inflation
         }
         // Radius mode: short objects only need nozzle-tip clearance (not the full head radius).
         bool all_objects_are_short = std::all_of(selected.begin(), selected.end(), [&](ArrangePolygon& ap) { return ap.height < params.nozzle_height; });
