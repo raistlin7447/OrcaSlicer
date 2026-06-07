@@ -7992,7 +7992,18 @@ unsigned int Plater::priv::update_background_process(bool force_validation, bool
             // or hide the old one.
             process_validation_warning(warning);
             if (printer_technology == ptFFF) {
-                view3D->get_canvas3d()->reset_sequential_print_clearance();
+                // validate() returns no blocking error here, but it still fills the clearance
+                // polygons when a sequential-print collision was detected and the user chose to
+                // slice anyway (sequential_print_collision_override). Keep those zones on screen
+                // so it stays visually clear that a collision exists; the warning explains that
+                // printing is allowed at the user's own risk.
+                if (!polygons.empty() || !height_polygons.empty()) {
+                    view3D->get_canvas3d()->set_sequential_print_clearance_visible(true);
+                    view3D->get_canvas3d()->set_sequential_print_clearance_render_fill(true);
+                    view3D->get_canvas3d()->set_sequential_print_clearance_polygons(polygons, height_polygons);
+                } else {
+                    view3D->get_canvas3d()->reset_sequential_print_clearance();
+                }
                 view3D->get_canvas3d()->set_as_dirty();
                 view3D->get_canvas3d()->request_extra_frame();
             }
@@ -17649,7 +17660,16 @@ void Plater::validate_current_plate(bool& model_fits, bool& validate_error)
             // Pass a warning from validation and either show a notification,
             // or hide the old one.
             p->process_validation_warning(warning);
-            p->view3D->get_canvas3d()->reset_sequential_print_clearance();
+            // Keep the clearance zones visible when a sequential-print collision was detected but
+            // overridden (sequential_print_collision_override): validate() returns no blocking
+            // error yet still fills the collision polygons. See update_background_process().
+            if (!polygons.empty() || !height_polygons.empty()) {
+                p->view3D->get_canvas3d()->set_sequential_print_clearance_visible(true);
+                p->view3D->get_canvas3d()->set_sequential_print_clearance_render_fill(true);
+                p->view3D->get_canvas3d()->set_sequential_print_clearance_polygons(polygons, height_polygons);
+            } else {
+                p->view3D->get_canvas3d()->reset_sequential_print_clearance();
+            }
             p->view3D->get_canvas3d()->set_as_dirty();
             p->view3D->get_canvas3d()->request_extra_frame();
         }
