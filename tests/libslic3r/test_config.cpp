@@ -3,6 +3,9 @@
 #include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/PrintConfigConstants.hpp"
 #include "libslic3r/LocalesUtils.hpp"
+#include "libslic3r/Preset.hpp"
+
+#include <algorithm>
 
 #include <cereal/types/polymorphic.hpp>
 #include <cereal/types/string.hpp> 
@@ -10,6 +13,25 @@
 #include <cereal/archives/binary.hpp>
 
 using namespace Slic3r;
+
+SCENARIO("Sequential-print options are registered as print options.", "[Config]") {
+    // A print setting shown in the Print Settings tab must be listed in
+    // Preset::print_options(), otherwise the print preset's config has no backing
+    // ConfigOption for the key and building its GUI field dereferences a null
+    // option() pointer (crash). Guards the sequential_print_collision_override
+    // option added for the collision override feature.
+    GIVEN("Preset::print_options()") {
+        const std::vector<std::string>& opts = Preset::print_options();
+        THEN("it contains sequential_print_collision_override") {
+            REQUIRE(std::find(opts.begin(), opts.end(),
+                "sequential_print_collision_override") != opts.end());
+        }
+        THEN("it contains by_object_sequence_order (the sibling option)") {
+            REQUIRE(std::find(opts.begin(), opts.end(),
+                "by_object_sequence_order") != opts.end());
+        }
+    }
+}
 
 SCENARIO("Legacy profiles derive X/Y extruder clearance from the radius.", "[Config]") {
     // The rectangular X/Y extruder-clearance options were added after extruder_clearance_radius.

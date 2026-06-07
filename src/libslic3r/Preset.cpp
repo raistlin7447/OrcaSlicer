@@ -1071,6 +1071,7 @@ static std::vector<std::string> s_Preset_print_options{
     "print_sequence",
     "print_order",
     "by_object_sequence_order",
+    "sequential_print_collision_override",
     "support_remove_small_overhang",
     "filename_format",
     "outer_wall_filament_id",
