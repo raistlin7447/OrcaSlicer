@@ -521,6 +521,125 @@ TEST_CASE("Bed shrink calculation for XY clearance mode", "[arrange][seq][xy_cle
     CHECK(4 * 3 == 12);           // all 12 coins fit
 }
 
+// ─── Tests 10-12: Rotation in by-object arrange ───────────────────────────
+//
+// By-object mode respects allow_rotations just like by-layer mode.
+// The packer tries 0°, 45°, 90°, 135° and picks the best fit.
+
+// Helper used by the expand_clearance_hull rotation test below.
+static PrintConfig make_xy_config_for_rotation(float cx, float cy, float radius = 18.0f)
+{
+    PrintConfig cfg;
+    cfg.extruder_clearance_type.value   = ExtruderClearanceType::XY;
+    cfg.extruder_clearance_x.value      = cx;
+    cfg.extruder_clearance_y.value      = cy;
+    cfg.extruder_clearance_radius.value = radius;
+    return cfg;
+}
+
+TEST_CASE("Arrange: rotation disabled - elongated object cannot fit on narrow bed", "[arrange][rotation]")
+{
+    // A 60x10mm footprint on a 15mm-wide bed.  Without rotation the 60mm dimension
+    // exceeds the bed width, so the item should not be placed on bed 0.
+    ArrangePolygon ap;
+    ap.poly.contour = make_rect(60.0, 10.0);
+    ap.rotation     = 0.0;
+    ap.inflation    = 0;
+    ap.extrude_ids  = {0};
+    ap.bed_idx      = 0;
+
+    ArrangeParams p = seq_xy_params();
+    p.allow_rotations = false;
+
+    ArrangePolygons items_single = {ap};
+    arrangement::arrange(items_single, {}, make_rect_bed(15.0, 300.0), p);
+    CHECK(items_single[0].bed_idx != 0); // 60mm > 15mm, cannot fit without rotation
+}
+
+TEST_CASE("Arrange: rotation enabled - elongated object fits on narrow bed at 90deg", "[arrange][rotation]")
+{
+    // Same 60x10mm footprint.  After 90deg rotation it becomes 10x60mm, which fits
+    // in a 15mm-wide bed.  The packer must discover and apply this rotation.
+    ArrangePolygon ap;
+    ap.poly.contour = make_rect(60.0, 10.0);
+    ap.rotation     = 0.0;
+    ap.inflation    = 0;
+    ap.extrude_ids  = {0};
+    ap.bed_idx      = 0;
+
+    ArrangeParams p = seq_xy_params();
+    p.allow_rotations = true;
+
+    ArrangePolygons items_single = {ap};
+    arrangement::arrange(items_single, {}, make_rect_bed(15.0, 300.0), p);
+
+    // After rotation the item must fit on bed 0.
+    REQUIRE(items_single[0].bed_idx == 0);
+    // The packer should have applied a non-trivial rotation (approximately 90deg).
+    double rot_mod_pi = std::fmod(std::abs(items_single[0].rotation), M_PI);
+    // 90deg = pi/2 ~= 1.57; allow tolerance for the discrete angle set {0,pi/4,pi/2,3pi/4}.
+    CHECK(rot_mod_pi > 0.1);
+}
+
+TEST_CASE("Arrange: rotation enabled - multiple elongated objects stack in rotated orientation", "[arrange][rotation]")
+{
+    // Four 60×8mm footprints on a 12×350mm bed.
+    // Without rotation: none fit (60mm > 12mm).
+    // With rotation (90°): each becomes 8×60mm → 4 objects stack vertically (4×60 = 240 < 350).
+    constexpr int N = 4;
+    ArrangePolygons items;
+    for (int i = 0; i < N; ++i) {
+        ArrangePolygon ap;
+        ap.poly.contour = make_rect(60.0, 8.0);
+        ap.rotation     = 0.0;
+        ap.inflation    = 0;
+        ap.extrude_ids  = {0};
+        ap.bed_idx      = 0;
+        items.push_back(ap);
+    }
+
+    ArrangeParams p = seq_xy_params();
+    p.allow_rotations = true;
+
+    arrangement::arrange(items, {}, make_rect_bed(12.0, 350.0), p);
+
+    int fitted = std::count_if(items.begin(), items.end(),
+        [](const ArrangePolygon& a){ return a.bed_idx == 0; });
+    CHECK(fitted == N);
+
+    // All placed items should have a non-zero rotation (showing they were rotated).
+    for (const auto& a : items)
+        if (a.bed_idx == 0)
+            CHECK(std::fmod(std::abs(a.rotation), M_PI) > 0.1);
+
+    CHECK(no_overlaps(items));
+}
+
+TEST_CASE("expand_clearance_hull: rotated hull correctly tracks object orientation", "[clearance_hull][rotation]")
+{
+    // A 40×10mm rectangle.  Rotating it 90° before calling expand_clearance_hull
+    // should yield a hull whose bounding box is 10+clearance wide and 40+clearance tall
+    // (not 40+clearance wide as it would be without rotation).
+    const PrintConfig cfg = make_xy_config_for_rotation(10.0f, 10.0f); // symmetric 10mm clearance
+    Polygon rect = make_rect(40.0, 10.0);
+    rect.rotate(M_PI / 2.0);  // 90° CCW: becomes 10mm wide × 40mm tall in world space
+
+    const Polygon hull = expand_clearance_hull(rect, cfg, 0.0f, false, 0.0f);
+    const BoundingBox bb = hull.bounding_box();
+
+    const double w = unscale<double>(bb.max.x() - bb.min.x());
+    const double h = unscale<double>(bb.max.y() - bb.min.y());
+
+    // After XY-clearance expansion: each side grows by clearance/2 = 5mm.
+    //   width  = 10 + 2*5 = 20mm  (short axis + clearance)
+    //   height = 40 + 2*5 = 50mm  (long  axis + clearance)
+    CHECK(w == Catch::Approx(20.0).epsilon(0.01));
+    CHECK(h == Catch::Approx(50.0).epsilon(0.01));
+
+    // Verify: rotated hull is portrait (taller than wide).
+    CHECK(h > w + 1.0);
+}
+
 // ─── Tests 10-12: expand_clearance_hull — canonical formula ───────────────
 //
 // These tests call expand_clearance_hull() directly — the same function used by
