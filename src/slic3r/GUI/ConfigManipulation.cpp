@@ -817,6 +817,7 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, co
     // for (auto el : { "extruder_clearance_radius", "extruder_clearance_height_to_rod", "extruder_clearance_height_to_lid" })
     //     toggle_field(el, have_sequential_printing);
     toggle_line("by_object_sequence_order", have_sequential_printing);
+    toggle_line("sequential_print_collision_override", have_sequential_printing);
     toggle_line("print_order", !have_sequential_printing);
 
     toggle_field("single_extruder_multi_material", !is_BBL_Printer);

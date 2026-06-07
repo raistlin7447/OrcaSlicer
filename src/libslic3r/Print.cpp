@@ -1322,7 +1322,15 @@ StringObjectException Print::validate(StringObjectException *warning, Polygons* 
         auto ret = sequential_print_clearance_valid(*this, collison_polygons, height_polygons);
         if (!ret.string.empty()) {
             ret.type = STRING_EXCEPT_OBJECT_COLLISION_IN_SEQ_PRINT;
-            return ret;
+            // When the user has opted in via sequential_print_collision_override, downgrade the
+            // blocking collision error to a non-blocking warning so slicing can proceed at their
+            // own risk. Mirrors the is_warning fallthrough used for incompatible-temperature checks.
+            if (m_config.sequential_print_collision_override.value && warning != nullptr) {
+                ret.is_warning = true;
+                *warning = ret;
+            } else {
+                return ret;
+            }
         }
     }
     else {

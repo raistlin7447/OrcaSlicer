@@ -1540,6 +1540,7 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionFloat,              extruder_clearance_radius))
     ((ConfigOptionFloat,              extruder_clearance_x))
     ((ConfigOptionFloat,              extruder_clearance_y))
+    ((ConfigOptionBool,               sequential_print_collision_override))
     ((ConfigOptionFloat,              nozzle_height))
     ((ConfigOptionStrings,            extruder_colour))
     ((ConfigOptionPoints,             extruder_offset))

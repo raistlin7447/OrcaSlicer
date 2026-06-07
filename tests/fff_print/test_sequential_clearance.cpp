@@ -434,3 +434,60 @@ TEST_CASE("SequentialClearance height: rod_height exceeds lid_height - current b
     // If behaviour is corrected (using min(rod,lid)=40mm): 50 > 40 -> error.
     CHECK(result.string.empty()); // documents current (possibly surprising) behaviour
 }
+
+// ---------------------------------------------------------------------------
+// Collision override (sequential_print_collision_override) - #6601 / #8310
+//
+// When the user opts in, Print::validate() must downgrade the blocking
+// "objects collide" error to a non-blocking warning so slicing can proceed.
+// This is verified through the full validate() path (not the lower-level
+// sequential_print_clearance_valid), because the downgrade lives in validate().
+// ---------------------------------------------------------------------------
+
+/// Build a By-Object config with the override flag set as requested.
+/// Paired with two cubes 5mm apart, this guarantees a collision at clearance_radius=20mm.
+static DynamicPrintConfig make_override_config(bool override_on)
+{
+    DynamicPrintConfig cfg = make_seq_config(/*clearance_r=*/20.0f);
+    cfg.set_key_value("print_sequence",
+        new ConfigOptionEnum<PrintSequence>(PrintSequence::ByObject));
+    cfg.set_key_value("sequential_print_collision_override",
+        new ConfigOptionBool(override_on));
+    return cfg;
+}
+
+TEST_CASE("SequentialClearance override: disabled keeps blocking collision error",
+    "[seq_clearance][override]")
+{
+    Model model;
+    Print print;
+    add_box(model, 20, 20, 20, 0,  0);
+    add_box(model, 20, 20, 20, 25, 0); // 5mm gap < 20mm clearance -> collision
+    apply(print, model, make_override_config(/*override_on=*/false));
+
+    StringObjectException warning;
+    StringObjectException err = print.validate(&warning);
+
+    // Override off: validate must return a blocking collision error.
+    CHECK(!err.string.empty());
+    CHECK(err.type == STRING_EXCEPT_OBJECT_COLLISION_IN_SEQ_PRINT);
+}
+
+TEST_CASE("SequentialClearance override: enabled downgrades collision to warning",
+    "[seq_clearance][override]")
+{
+    Model model;
+    Print print;
+    add_box(model, 20, 20, 20, 0,  0);
+    add_box(model, 20, 20, 20, 25, 0); // same collision as above
+    apply(print, model, make_override_config(/*override_on=*/true));
+
+    StringObjectException warning;
+    StringObjectException err = print.validate(&warning);
+
+    // Override on: no blocking error (slicing allowed), but the user is warned.
+    CHECK(err.string.empty());
+    CHECK(!warning.string.empty());
+    CHECK(warning.is_warning);
+    CHECK(warning.type == STRING_EXCEPT_OBJECT_COLLISION_IN_SEQ_PRINT);
+}

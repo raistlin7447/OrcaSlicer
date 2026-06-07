@@ -2284,6 +2284,15 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(20));
 
+    def = this->add("sequential_print_collision_override", coBool);
+    def->label = L("Slice despite collision risk");
+    def->tooltip = L("By-object (sequential) printing normally blocks slicing when objects are too close or too tall for the "
+        "toolhead to clear an already-printed object. Enable this to downgrade that blocking error to a warning and slice anyway. "
+        "The clearance check may be overly conservative for low objects or unusual toolheads; use this only when you have verified "
+        "that no collision will actually occur, as a real collision can damage your print or printer.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+
     def = this->add("nozzle_height", coFloat);
     def->label = L("Nozzle height");
     def->tooltip = L("The height of nozzle tip.");
