@@ -1196,6 +1196,24 @@ public:
     //static float min_skirt_length;
 };
 
+/// Canonical clearance hull formula shared by sequential_print_clearance_valid
+/// (collision check and error display) and GLCanvas3D::update_sequential_clearance
+/// (drag-preview display).  Centralising the formula here guarantees the three code
+/// paths always agree: changing clearance logic in one place propagates everywhere.
+///
+/// @param hull         Object 2D convex hull in object-local coordinates.
+/// @param cfg          PrintConfig (extruder_clearance_type/x/y/radius).
+/// @param skirt_offset Per-side skirt gap from Print::object_skirt_offset().
+/// @param all_short    True when all objects are shorter than the nozzle clearance
+///                     height (Print::is_all_objects_are_short()); ignored in XY mode.
+/// @param shrink_mm    Tolerance subtracted from the expansion distance:
+///                       0.0 — display hull (full zone, no tolerance)
+///                       0.1 — check hull (avoids false positives at exact boundary)
+/// @return Expanded hull polygon in the same coordinate frame as @p hull.
+Polygon expand_clearance_hull(const Polygon& hull, const PrintConfig& cfg,
+                              float skirt_offset, bool all_short,
+                              float shrink_mm = 0.0f);
+
 
 } /* slic3r_Print_hpp_ */
 

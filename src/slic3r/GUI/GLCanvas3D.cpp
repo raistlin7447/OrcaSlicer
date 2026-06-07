@@ -5586,17 +5586,7 @@ void GLCanvas3D::update_sequential_clearance()
         m_sequential_print_clearance.m_hull_2d_cache.clear();
         auto [object_skirt_offset, _] = fff_print()->object_skirt_offset();
         const auto& cfg = fff_print()->config();
-        // Do NOT gate on is_all_objects_are_short(): when XY mode is explicitly chosen, always
-        // show the XY clearance rectangles regardless of object height.
-        const bool use_xy = cfg.extruder_clearance_type.value == ExtruderClearanceType::XY;
-        const float shrink_factor = fff_print()->is_all_objects_are_short()
-            ? scale_(std::max(0.5f * MAX_OUTER_NOZZLE_DIAMETER, object_skirt_offset) - 0.1)
-            : scale_(0.5f * cfg.extruder_clearance_radius.value + object_skirt_offset - 0.1);
-        // Use HALF the clearance per side (same convention as radius mode: each object's zone is
-        // expanded by clearance/2 so that two touching zones = exactly the minimum clearance gap).
-        // Using full clearance here would show zones 2× larger than the actual collision boundary.
-        const coord_t shrink_x = use_xy ? scale_((cfg.extruder_clearance_x.value + object_skirt_offset) / 2.f - 0.1f) : 0;
-        const coord_t shrink_y = use_xy ? scale_((cfg.extruder_clearance_y.value + object_skirt_offset) / 2.f - 0.1f) : 0;
+        const bool all_short = fff_print()->is_all_objects_are_short();
 
         m_sequential_print_clearance.m_hull_2d_cache.reserve(m_model->objects.size());
         for (size_t i = 0; i < m_model->objects.size(); ++i) {
@@ -5604,14 +5594,9 @@ void GLCanvas3D::update_sequential_clearance()
             ModelInstance* model_instance0 = model_object->instances.front();
             Polygon hull_no_offset = model_object->convex_hull_2d(Geometry::assemble_transform({ 0.0, 0.0, model_instance0->get_offset().z() }, model_instance0->get_rotation(),
                 model_instance0->get_scaling_factor(), model_instance0->get_mirror()));
-            Polygon hull_2d;
-            if (use_xy) {
-                hull_2d = Geometry::minkowski_rect(hull_no_offset, shrink_x, shrink_y);
-            } else {
-                // Shrink the clearance a tiny bit so objects placed exactly at the limit don't falsely trigger collision.
-                auto tmp = offset(hull_no_offset, shrink_factor, jtRound, scale_(0.1));
-                hull_2d = !tmp.empty() ? tmp.front() : hull_no_offset; // tmp may be empty due to clipper's bug, see STUDIO-2452
-            }
+            // Display hull (shrink_mm=0.0): same formula as sequential_print_clearance_valid's
+            // display_hull, so the orange preview zones exactly match the error-highlight zones.
+            Polygon hull_2d = expand_clearance_hull(hull_no_offset, cfg, object_skirt_offset, all_short, 0.0f);
 
             Pointf3s& cache_hull_2d = m_sequential_print_clearance.m_hull_2d_cache.emplace_back(Pointf3s());
             cache_hull_2d.reserve(hull_2d.points.size());

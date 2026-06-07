@@ -608,6 +608,22 @@ std::vector<size_t> Print::layers_sorted_for_object(float start, float end, std:
     return idx_of_object_sorted;
 };
 
+Polygon expand_clearance_hull(const Polygon& hull, const PrintConfig& cfg,
+                              float skirt_offset, bool all_short, float shrink_mm)
+{
+    if (cfg.extruder_clearance_type.value == ExtruderClearanceType::XY) {
+        coord_t dx = scale_((cfg.extruder_clearance_x.value + skirt_offset) / 2.f - shrink_mm);
+        coord_t dy = scale_((cfg.extruder_clearance_y.value + skirt_offset) / 2.f - shrink_mm);
+        return Geometry::minkowski_rect(hull, dx, dy);
+    }
+    // Radius mode: uniform circular offset, half-clearance per side.
+    const float radius = all_short
+        ? std::max(0.5f * MAX_OUTER_NOZZLE_DIAMETER, skirt_offset)
+        : 0.5f * cfg.extruder_clearance_radius.value + skirt_offset;
+    auto tmp = offset(hull, scale_(std::max(0.f, radius - shrink_mm)), jtRound, scale_(0.1));
+    return tmp.empty() ? hull : tmp.front(); // guard against Clipper failure (STUDIO-2452)
+}
+
 StringObjectException Print::sequential_print_clearance_valid(const Print &print, Polygons *polygons, std::vector<std::pair<Polygon, float>>* height_polygons)
 {
     StringObjectException single_object_exception;
@@ -636,35 +652,17 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
     };
 
     auto [object_skirt_offset, _] = print.object_skirt_offset();
-    // XY clearance mode uses asymmetric Minkowski expansion instead of a uniform offset radius.
-    // Do NOT gate on is_all_objects_are_short(): when XY mode is explicitly chosen, the user's
-    // clearance_x/clearance_y values must be respected even for thin objects.
+    const bool all_short = print.is_all_objects_are_short();
     const bool use_xy_clearance =
         print_config.extruder_clearance_type.value == ExtruderClearanceType::XY;
     std::vector<struct print_instance_info> print_instance_with_bounding_box;
     {
         // sequential_print_horizontal_clearance_valid
-        Polygons convex_hulls_other;  // half-clearance hulls used for collision detection
-        Polygons display_hulls_other; // full-clearance hulls used for error display (match GLCanvas3D zones)
+        Polygons convex_hulls_other;  // check hulls (shrink_mm=0.1) used for collision detection
+        Polygons display_hulls_other; // display hulls (shrink_mm=0.0) used for error highlighting
         if (polygons != nullptr)
             polygons->clear();
         std::vector<size_t> intersecting_idxs;
-
-        // Shrink the clearance zone a tiny bit, so that if the object arrangement algorithm placed the objects
-        // exactly by satisfying the clearance constraint, this test will not trigger collision.
-        const float obj_distance = print.is_all_objects_are_short()
-            ? scale_(std::max(0.5f * MAX_OUTER_NOZZLE_DIAMETER, object_skirt_offset) - 0.1)
-            : scale_(0.5f * print_config.extruder_clearance_radius.value + object_skirt_offset - 0.1);
-        // Check hull (half clearance per side): matches arrange's bounding-box expansion so two objects
-        // placed exactly at the minimum gap do not trigger a false-positive collision.  The -0.1 mm
-        // tolerance absorbs floating-point rounding at the exact boundary.
-        const coord_t obj_dist_x = use_xy_clearance ? scale_((print_config.extruder_clearance_x.value + object_skirt_offset) / 2.f - 0.1f) : 0;
-        const coord_t obj_dist_y = use_xy_clearance ? scale_((print_config.extruder_clearance_y.value + object_skirt_offset) / 2.f - 0.1f) : 0;
-        // Display hull (half clearance per side): matches the visual zones rendered by
-        // GLCanvas3D::_render_sequential_clearance(), which also uses clearance/2 per side so
-        // that two touching zones = exactly the minimum clearance gap between objects.
-        const coord_t display_dist_x = use_xy_clearance ? scale_((print_config.extruder_clearance_x.value + object_skirt_offset) / 2.f) : 0;
-        const coord_t display_dist_y = use_xy_clearance ? scale_((print_config.extruder_clearance_y.value + object_skirt_offset) / 2.f) : 0;
 
         for (const PrintObject *print_object : print.objects()) {
             assert(! print_object->model_object()->instances.empty());
@@ -676,33 +674,17 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
                 Polygon convex_hull0 = print_object->model_object()->convex_hull_2d(Geometry::assemble_transform(
                             { 0.0, 0.0, instance.model_instance->get_offset().z() }, instance.model_instance->get_rotation(), instance.model_instance->get_scaling_factor(), instance.model_instance->get_mirror()));
 
-                Polygon convex_hull_no_offset = convex_hull0, convex_hull, display_hull;
-                if (use_xy_clearance) {
-                    // Check hull: half-clearance Minkowski — avoids false positives for correctly arranged objects.
-                    convex_hull = Geometry::minkowski_rect(convex_hull_no_offset, obj_dist_x, obj_dist_y);
-                    convex_hull.translate(instance.shift - print_object->center_offset());
-                    // Display hull: full-clearance Minkowski — matches the visual zones in GLCanvas3D.
-                    display_hull = Geometry::minkowski_rect(convex_hull_no_offset, display_dist_x, display_dist_y);
-                    display_hull.translate(instance.shift - print_object->center_offset());
-                } else {
-                    auto tmp = offset(convex_hull_no_offset, obj_distance, jtRound, scale_(0.1));
-                    if (!tmp.empty()) { // tmp may be empty due to clipper's bug, see STUDIO-2452
-                        convex_hull = tmp.front();
-                        // instance.shift is a position of a centered object, while model object may not be centered.
-                        // Convert the shift from the PrintObject's coordinates into ModelObject's coordinates by removing the centering offset.
-                        convex_hull.translate(instance.shift - print_object->center_offset());
-                        display_hull = convex_hull; // radius mode: check and display hulls are identical
-                    }
-                }
-                convex_hull_no_offset.translate(instance.shift - print_object->center_offset());
-                // Fallback for Clipper offset failure (STUDIO-2452, radius mode only): guard
-                // against empty hulls so print_instance_info always receives a valid bounding_box.
-                // An empty display_hull would produce a degenerate BoundingBox, making iy1==iy2
-                // in the vertical-clearance check and silently skipping the too-tall warning.
-                if (!use_xy_clearance) {
-                    if (convex_hull.empty()) convex_hull = convex_hull_no_offset;
-                    if (display_hull.empty()) display_hull = convex_hull;
-                }
+                // instance.shift is a position of a centered object; remove the centering offset
+                // to convert from PrintObject coordinates into ModelObject (world) coordinates.
+                const Point shift = instance.shift - print_object->center_offset();
+                Polygon convex_hull_no_offset = convex_hull0;
+                // check hull: shrink_mm=0.1 avoids false positives at the exact arranged boundary.
+                Polygon convex_hull  = expand_clearance_hull(convex_hull_no_offset, print_config, object_skirt_offset, all_short, 0.1f);
+                convex_hull.translate(shift);
+                // display hull: shrink_mm=0.0 shows the full clearance zone (matches GLCanvas3D).
+                Polygon display_hull = expand_clearance_hull(convex_hull_no_offset, print_config, object_skirt_offset, all_short, 0.0f);
+                display_hull.translate(shift);
+                convex_hull_no_offset.translate(shift);
                 //juedge the exclude area
                 if (!intersection(exclude_polys, convex_hull_no_offset).empty()) {
                     if (single_object_exception.string.empty()) {
@@ -909,12 +891,12 @@ StringObjectException Print::sequential_print_clearance_valid(const Print &print
             // 只需要考虑喷嘴到滑杆的偏移量，这个比整个工具头的碰撞半径要小得多
             // Only the offset from the nozzle to the slide bar needs to be considered, which is much smaller than the collision radius of the entire tool head.
             const auto& orig_bbox = print_instance_with_bounding_box[k].bounding_box;
-            // Undo the Y expansion applied by the display hull's minkowski_rect to recover the
-            // object's actual Y extent from the bounding box.
-            //   XY mode   → display_hull expanded by clearance_y/2 per side (half-clearance convention)
-            //   radius mode → hull expanded by 0.5 * clearance_radius (obj_distance)
-            // Formula: y_clearance_half = (clearance_y - object_skirt_offset) / 2  so that
-            //   y_clearance_half + object_skirt_offset = (clearance_y + object_skirt_offset) / 2 = display_dist_y/scale_
+            // Undo the Y expansion applied by expand_clearance_hull (display hull, shrink_mm=0) to
+            // recover the object's actual Y extent from the bounding box stored in print_instance_info.
+            //   XY mode     → display_hull expanded by (clearance_y + skirt) / 2 per side
+            //   radius mode → display_hull expanded by 0.5 * clearance_radius + skirt per side
+            // y_clearance_half excludes the skirt so that (y_clearance_half + skirt) equals the
+            // per-side expansion, which cancels the stored bounding box offset exactly.
             const float y_clearance_half = use_xy_clearance
                 ? 0.5f * (print_config.extruder_clearance_y.value - static_cast<float>(object_skirt_offset))
                 : 0.5f * print_config.extruder_clearance_radius.value;

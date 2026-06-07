@@ -26,6 +26,7 @@
 #include "libslic3r/Arrange.hpp"
 #include "libslic3r/Geometry/ConvexHull.hpp"
 #include "libslic3r/ClipperUtils.hpp"
+#include "libslic3r/Print.hpp"       // expand_clearance_hull, PrintConfig, ExtruderClearanceType
 
 #include <algorithm>
 #include <cmath>
@@ -518,4 +519,164 @@ TEST_CASE("Bed shrink calculation for XY clearance mode", "[arrange][seq][xy_cle
     CHECK(int(eff_x / fw) == 4);  // 4 columns
     CHECK(int(eff_y / fh) == 3);  // 3 rows
     CHECK(4 * 3 == 12);           // all 12 coins fit
+}
+
+// ─── Tests 10-12: expand_clearance_hull — canonical formula ───────────────
+//
+// These tests call expand_clearance_hull() directly — the same function used by
+// both Print::sequential_print_clearance_valid (collision check + error display)
+// and GLCanvas3D::update_sequential_clearance (drag-preview display).
+// Testing here covers both code paths simultaneously.
+
+/// Build a PrintConfig suitable for XY-clearance tests.
+static PrintConfig make_xy_config(float cx, float cy, float radius = 18.0f)
+{
+    PrintConfig cfg;
+    cfg.extruder_clearance_type.value   = ExtruderClearanceType::XY;
+    cfg.extruder_clearance_x.value      = cx;
+    cfg.extruder_clearance_y.value      = cy;
+    cfg.extruder_clearance_radius.value = radius;
+    return cfg;
+}
+
+/// Build a PrintConfig suitable for radius-clearance tests.
+static PrintConfig make_radius_config(float radius)
+{
+    PrintConfig cfg;
+    cfg.extruder_clearance_type.value   = ExtruderClearanceType::Radius;
+    cfg.extruder_clearance_x.value      = radius;
+    cfg.extruder_clearance_y.value      = radius;
+    cfg.extruder_clearance_radius.value = radius;
+    return cfg;
+}
+
+TEST_CASE("expand_clearance_hull: XY mode display hull spans full clearance zone", "[clearance_hull][xy]")
+{
+    // 39 mm coin, clearance_x=18 mm, clearance_y=36 mm, no skirt.
+    // Display hull (shrink_mm=0.0): each side expands by clearance/2.
+    //   Expected bbox: (39+18) × (39+36) = 57 × 75 mm.
+    const PrintConfig cfg = make_xy_config(18.0f, 36.0f);
+    const Polygon coin    = make_circle(39.0);
+
+    const Polygon display = expand_clearance_hull(coin, cfg, 0.0f, false, 0.0f);
+    const BoundingBox bb  = display.bounding_box();
+
+    const double w = unscale<double>(bb.max.x() - bb.min.x());
+    const double h = unscale<double>(bb.max.y() - bb.min.y());
+
+    CHECK(w == Catch::Approx(57.0).epsilon(0.01));
+    CHECK(h == Catch::Approx(75.0).epsilon(0.01));
+}
+
+TEST_CASE("expand_clearance_hull: XY mode check hull is 2*shrink_mm smaller than display hull", "[clearance_hull][xy]")
+{
+    // With shrink_mm=0.1: each axis is 0.2 mm narrower than the display hull.
+    const PrintConfig cfg = make_xy_config(18.0f, 36.0f);
+    const Polygon coin    = make_circle(39.0);
+
+    const Polygon display = expand_clearance_hull(coin, cfg, 0.0f, false, 0.0f);
+    const Polygon check   = expand_clearance_hull(coin, cfg, 0.0f, false, 0.1f);
+
+    const BoundingBox bd = display.bounding_box();
+    const BoundingBox bc = check.bounding_box();
+
+    const double dw = unscale<double>(bd.max.x() - bd.min.x());
+    const double dh = unscale<double>(bd.max.y() - bd.min.y());
+    const double cw = unscale<double>(bc.max.x() - bc.min.x());
+    const double ch = unscale<double>(bc.max.y() - bc.min.y());
+
+    // Check hull should be exactly 2*0.1 = 0.2 mm narrower on each axis.
+    CHECK(dw - cw == Catch::Approx(0.2).epsilon(0.01));
+    CHECK(dh - ch == Catch::Approx(0.2).epsilon(0.01));
+
+    // Sanity: display hull is always larger.
+    CHECK(dw > cw);
+    CHECK(dh > ch);
+}
+
+TEST_CASE("expand_clearance_hull: XY mode check hull prevents false-positive at minimum gap", "[clearance_hull][xy][collision]")
+{
+    // Two 39 mm coins separated by exactly clearance_x=18 mm.
+    // Check hull (shrink_mm=0.1) must NOT intersect (no false positive).
+    // Display hull (shrink_mm=0.0) WILL touch or slightly overlap (by design).
+    const PrintConfig cfg = make_xy_config(18.0f, 36.0f);
+    const Polygon coin    = make_circle(39.0);
+
+    const Polygon check = expand_clearance_hull(coin, cfg, 0.0f, false, 0.1f);
+
+    const double center_gap = 39.0 + 18.0;  // D + clearance_x = 57 mm
+    Polygon h1 = check, h2 = check;
+    h1.translate(scale_(-center_gap / 2.0), 0);
+    h2.translate(scale_( center_gap / 2.0), 0);
+
+    // At exactly the minimum gap the check hulls must NOT intersect.
+    CHECK(intersection(Polygons{h1}, Polygons{h2}).empty());
+
+    // One mm inside minimum gap: must detect collision.
+    Polygon g1 = check, g2 = check;
+    g1.translate(scale_(-(center_gap - 1.0) / 2.0), 0);
+    g2.translate(scale_( (center_gap - 1.0) / 2.0), 0);
+    CHECK(!intersection(Polygons{g1}, Polygons{g2}).empty());
+}
+
+TEST_CASE("expand_clearance_hull: radius mode display hull diameter matches clearance_radius", "[clearance_hull][radius]")
+{
+    // Radius mode: uniform expansion by clearance_radius/2 per side.
+    // 39 mm coin, clearance_radius=18 mm → display hull diameter ≈ 57 mm.
+    const PrintConfig cfg = make_radius_config(18.0f);
+    const Polygon coin    = make_circle(39.0);
+
+    const Polygon display = expand_clearance_hull(coin, cfg, 0.0f, false, 0.0f);
+    const BoundingBox bb  = display.bounding_box();
+
+    const double w = unscale<double>(bb.max.x() - bb.min.x());
+    const double h = unscale<double>(bb.max.y() - bb.min.y());
+
+    // Circle ≈ circle so width ≈ height ≈ 57 mm (with circle-approximation tolerance).
+    CHECK(w == Catch::Approx(57.0).epsilon(0.5));
+    CHECK(h == Catch::Approx(57.0).epsilon(0.5));
+    CHECK(w == Catch::Approx(h).epsilon(0.01));  // symmetric
+}
+
+TEST_CASE("expand_clearance_hull: radius mode check hull is smaller than display hull", "[clearance_hull][radius]")
+{
+    // With shrink_mm=0.1, the radius expansion is reduced by 0.1mm per side.
+    const PrintConfig cfg = make_radius_config(18.0f);
+    const Polygon coin    = make_circle(39.0);
+
+    const Polygon display = expand_clearance_hull(coin, cfg, 0.0f, false, 0.0f);
+    const Polygon check   = expand_clearance_hull(coin, cfg, 0.0f, false, 0.1f);
+
+    const BoundingBox bd = display.bounding_box();
+    const BoundingBox bc = check.bounding_box();
+
+    const double dw = unscale<double>(bd.max.x() - bd.min.x());
+    const double cw = unscale<double>(bc.max.x() - bc.min.x());
+
+    // Check hull is smaller by 2 * shrink_mm = 0.2 mm.
+    CHECK(dw > cw);
+    CHECK(dw - cw == Catch::Approx(0.2).epsilon(0.05));
+}
+
+TEST_CASE("expand_clearance_hull: skirt offset is included in expansion", "[clearance_hull][xy]")
+{
+    // skirt_offset=2 mm should widen the hull the same way as increasing clearance_x/y by 2mm.
+    const PrintConfig cfg     = make_xy_config(18.0f, 36.0f);
+    const Polygon coin        = make_circle(39.0);
+
+    const Polygon no_skirt   = expand_clearance_hull(coin, cfg, 0.0f, false, 0.0f);
+    const Polygon with_skirt = expand_clearance_hull(coin, cfg, 2.0f, false, 0.0f);
+
+    const BoundingBox bb_ns = no_skirt.bounding_box();
+    const BoundingBox bb_ws = with_skirt.bounding_box();
+
+    const double ns_w = unscale<double>(bb_ns.max.x() - bb_ns.min.x());
+    const double ws_w = unscale<double>(bb_ws.max.x() - bb_ws.min.x());
+    const double ns_h = unscale<double>(bb_ns.max.y() - bb_ns.min.y());
+    const double ws_h = unscale<double>(bb_ws.max.y() - bb_ws.min.y());
+
+    // skirt_offset is added to clearance/2 per side, so total growth per axis = skirt_offset.
+    //   dx = (clearance_x + skirt) / 2 → Δdx = skirt/2 → total ΔW = 2 * skirt/2 = skirt
+    CHECK(ws_w - ns_w == Catch::Approx(2.0).epsilon(0.01));
+    CHECK(ws_h - ns_h == Catch::Approx(2.0).epsilon(0.01));
 }
