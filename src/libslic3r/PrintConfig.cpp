@@ -3880,6 +3880,17 @@ void PrintConfigDef::init_fff_params()
     def->mode    = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(0));
 
+    def = this->add("machine_additional_prepare_time", coFloat);
+    def->label = L("Additional prepare time");
+    def->tooltip = L("Extra preparation time (heating, homing, bed leveling, etc.) to add to the print time "
+                     "estimate. Useful when the start G-code is a macro (e.g. Klipper PRINT_START) whose real "
+                     "duration the slicer cannot measure. Improves the estimated total and the M73 progress "
+                     "reported to the printer. Set to 0 to disable.");
+    def->sidetext = L("s");	// seconds, CIS languages need translation
+    def->min = 0;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(0));
+
     // Orca: may remove this option later
     def =this->add("support_chamber_temp_control",coBool);
     def->label=L("Support control chamber temperature");

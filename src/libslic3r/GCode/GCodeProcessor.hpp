@@ -631,6 +631,8 @@ class Print;
             float filament_unload_times;
             //Orca:  time for tool change
             float machine_tool_change_time;
+            //Orca: extra prepare time (heating, homing, etc.) added to the estimate; 0 = disabled
+            float machine_additional_prepare_time;
 
             std::array<TimeMachine, static_cast<size_t>(PrintEstimatedStatistics::ETimeMode::Count)> machines;
 
@@ -818,6 +820,7 @@ class Print;
         float m_first_layer_height; // mm
         float m_zero_layer_height; // mm
         bool m_processing_start_custom_gcode;
+        bool m_additional_prepare_time_injected;
         unsigned int m_g1_line_id;
         unsigned int m_layer_id;
         CpColor m_cp_color;

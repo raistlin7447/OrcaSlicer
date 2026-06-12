@@ -556,6 +556,7 @@ void GCodeProcessor::TimeProcessor::reset()
     filament_load_times = 0.0f;
     filament_unload_times = 0.0f;
     machine_tool_change_time = 0.0f;
+    machine_additional_prepare_time = 0.0f;
 
 
     for (size_t i = 0; i < static_cast<size_t>(PrintEstimatedStatistics::ETimeMode::Count); ++i) {
@@ -2035,6 +2036,7 @@ void GCodeProcessor::apply_config(const PrintConfig& config)
     m_time_processor.filament_load_times = static_cast<float>(config.machine_load_filament_time.value);
     m_time_processor.filament_unload_times = static_cast<float>(config.machine_unload_filament_time.value);
     m_time_processor.machine_tool_change_time = static_cast<float>(config.machine_tool_change_time.value);
+    m_time_processor.machine_additional_prepare_time = static_cast<float>(config.machine_additional_prepare_time.value);
 
     for (size_t i = 0; i < static_cast<size_t>(PrintEstimatedStatistics::ETimeMode::Count); ++i) {
         float max_acceleration = get_option_value(m_time_processor.machine_limits.machine_max_acceleration_extruding, i);
@@ -2288,6 +2290,10 @@ void GCodeProcessor::apply_config(const DynamicPrintConfig& config)
     if (machine_tool_change_time != nullptr)
         m_time_processor.machine_tool_change_time = static_cast<float>(machine_tool_change_time->value);
 
+    const ConfigOptionFloat* machine_additional_prepare_time = config.option<ConfigOptionFloat>("machine_additional_prepare_time");
+    if (machine_additional_prepare_time != nullptr)
+        m_time_processor.machine_additional_prepare_time = static_cast<float>(machine_additional_prepare_time->value);
+
     if (m_flavor == gcfMarlinLegacy || m_flavor == gcfMarlinFirmware || m_flavor == gcfKlipper) {
         const ConfigOptionFloats* machine_max_acceleration_x = config.option<ConfigOptionFloats>("machine_max_acceleration_x");
         if (machine_max_acceleration_x != nullptr)
@@ -2475,6 +2481,7 @@ void GCodeProcessor::reset()
     m_zero_layer_height = 0.0f;
     m_first_layer_height = 0.0f;
     m_processing_start_custom_gcode = false;
+    m_additional_prepare_time_injected = false;
     m_g1_line_id = 0;
     m_layer_id = 0;
     m_cp_color.reset();
@@ -3050,7 +3057,15 @@ void GCodeProcessor::process_tags(const std::string_view comment, bool producers
         set_extrusion_role(ExtrusionEntity::string_to_role(comment.substr(reserved_tag(ETags::Role).length())));
         if (m_extrusion_role == erExternalPerimeter)
             m_seams_detector.activate(true);
+        const bool was_processing_start_custom_gcode = m_processing_start_custom_gcode;
         m_processing_start_custom_gcode = (m_extrusion_role == erCustom && m_g1_line_id == 0);
+        // Orca: add machine_additional_prepare_time to the estimate once, when the start G-code ends.
+        const bool start_custom_gcode_ended = was_processing_start_custom_gcode && !m_processing_start_custom_gcode;
+        if (start_custom_gcode_ended && !m_additional_prepare_time_injected &&
+            m_time_processor.machine_additional_prepare_time > 0.0f) {
+            simulate_st_synchronize(m_time_processor.machine_additional_prepare_time);
+            m_additional_prepare_time_injected = true;
+        }
         return;
     }
 
