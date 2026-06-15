@@ -78,6 +78,7 @@ static DynamicPrintConfig make_seq_config(
     // Default order: objects print in the order they were added to the model.
     cfg.set_key_value("by_object_sequence_order",
         new ConfigOptionEnum<ByObjectSequenceOrder>(ByObjectSequenceOrder::Default));
+    cfg.set_key_value("layer_change_gcode", new ConfigOptionString("G92 E0\n")); // validate() relative-E reset
     return cfg;
 }
 
