@@ -466,8 +466,8 @@ TEST_CASE("SequentialClearance override: disabled keeps blocking collision error
     add_box(model, 20, 20, 20, 25, 0); // 5mm gap < 20mm clearance -> collision
     apply(print, model, make_override_config(/*override_on=*/false));
 
-    StringObjectException warning;
-    StringObjectException err = print.validate(&warning);
+    std::vector<StringObjectException> warnings;
+    StringObjectException err = print.validate(&warnings);
 
     // Override off: validate must return a blocking collision error.
     CHECK(!err.string.empty());
@@ -483,12 +483,14 @@ TEST_CASE("SequentialClearance override: enabled downgrades collision to warning
     add_box(model, 20, 20, 20, 25, 0); // same collision as above
     apply(print, model, make_override_config(/*override_on=*/true));
 
-    StringObjectException warning;
-    StringObjectException err = print.validate(&warning);
+    std::vector<StringObjectException> warnings;
+    StringObjectException err = print.validate(&warnings);
 
     // Override on: no blocking error (slicing allowed), but the user is warned.
     CHECK(err.string.empty());
-    CHECK(!warning.string.empty());
-    CHECK(warning.is_warning);
-    CHECK(warning.type == STRING_EXCEPT_OBJECT_COLLISION_IN_SEQ_PRINT);
+    const StringObjectException* collision = nullptr;
+    for (const auto& w : warnings)
+        if (w.type == STRING_EXCEPT_OBJECT_COLLISION_IN_SEQ_PRINT) collision = &w;
+    REQUIRE(collision != nullptr);
+    CHECK(collision->is_warning);
 }
