@@ -80,6 +80,7 @@ public:
     void    check_adaptive_pressure_advance_model(DynamicPrintConfig* config);
     void    check_filament_max_volumetric_speed(DynamicPrintConfig *config);
     void    check_chamber_temperature(DynamicPrintConfig* config);
+    void    check_chamber_minimal_temperature(DynamicPrintConfig* config);
     void    check_object_layer_height(DynamicPrintConfig* config);
     void    layer_height_out_of_range_dialog(DynamicPrintConfig* config, double clamp_to);
     void    set_is_BBL_Printer(bool is_bbl_printer) { is_BBL_Printer = is_bbl_printer; };

@@ -1948,6 +1948,11 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
     if(m_active_page)
         m_active_page->update_visibility(m_mode, true);
     m_page_view->GetParent()->Layout();
+
+    // ORCA also update states of plates for plates toolbar. same method exist on Plater::priv::on_select_preset()
+    auto& plate_list = wxGetApp().plater()->get_partplate_list();
+    for (auto plate : plate_list.get_plate_list())
+        plate->update_slice_result_valid_state(false);
 }
 
 void Tab::show_timelapse_warning_dialog() {
@@ -2135,6 +2140,11 @@ void Tab::on_presets_changed()
     m_dependent_tabs.clear();
 
     wxGetApp().plater()->update_project_dirty_from_presets();
+
+    // ORCA also update states of plates for plates toolbar. same method exist on Plater::priv::on_select_preset()
+    auto& plate_list = wxGetApp().plater()->get_partplate_list();
+    for (auto plate : plate_list.get_plate_list())
+        plate->update_slice_result_valid_state(false);
 }
 
 void Tab::build_preset_description_line(ConfigOptionsGroup* optgroup)
@@ -3946,7 +3956,29 @@ void TabFilament::build()
 
         optgroup = page->new_optgroup(L("Print chamber temperature"), L"param_chamber_temp");
         optgroup->append_single_option_line("activate_chamber_temp_control", "material_temperatures#print-chamber-temperature");
-        optgroup->append_single_option_line("chamber_temperature", "material_temperatures#print-chamber-temperature");
+        line = { L("Chamber temperature"), L("Target chamber temperature, and the minimal chamber temperature at which printing should start") };
+        line.label_path = "material_temperatures#print-chamber-temperature";
+        Option chamber_temp_target_opt = optgroup->get_option("chamber_temperature");
+        chamber_temp_target_opt.opt.label = L("Target");
+        line.append_option(chamber_temp_target_opt);
+        Option chamber_min_temp_opt = optgroup->get_option("chamber_minimal_temperature");
+        chamber_min_temp_opt.opt.label = L("Minimal");
+        line.append_option(chamber_min_temp_opt);
+        optgroup->append_line(line);
+        optgroup->m_on_change = [this](t_config_option_key opt_key, boost::any value) {
+            DynamicPrintConfig& filament_config = m_preset_bundle->filaments.get_edited_preset().config;
+
+            update_dirty();
+            if (opt_key == "chamber_temperature") {
+                m_config_manipulation.check_chamber_temperature(&filament_config);
+                m_config_manipulation.check_chamber_minimal_temperature(&filament_config);
+            }
+            else if (opt_key == "chamber_minimal_temperature") {
+                m_config_manipulation.check_chamber_minimal_temperature(&filament_config);
+            }
+
+            on_value_change(opt_key, value);
+        };
 
         optgroup = page->new_optgroup(L("Print temperature"), L"param_extruder_temp");
         line = { L("Nozzle"), L("Nozzle temperature when printing") };
@@ -4020,9 +4052,6 @@ void TabFilament::build()
             }
             else if (opt_key == "nozzle_temperature_initial_layer") {
                 m_config_manipulation.check_nozzle_temperature_initial_layer_range(&filament_config);
-            }
-            else if (opt_key == "chamber_temperature") {
-                m_config_manipulation.check_chamber_temperature(&filament_config);
             }
 
             on_value_change(opt_key, value);
