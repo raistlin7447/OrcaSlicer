@@ -70,8 +70,7 @@ TEST_CASE("Skirt is emitted once per layer it spans", "[SkirtBrim]")
 
 // Each per-object skirt prints right before its own object, so distant objects yield two
 // non-contiguous skirt passes; close objects group into a single skirt.
-// [NotWorking]: flaky on arm64 CI (intermittent ClipperLib "Coordinate outside allowed range" throw).
-TEST_CASE("Per-object skirts group when objects are close", "[SkirtBrim][NotWorking]")
+TEST_CASE("Per-object skirts group when objects are close", "[SkirtBrim]")
 {
     auto [gap, expected_skirts] = GENERATE(table<double, int>({ { 5.0, 1 }, { 60.0, 2 } }));
     DYNAMIC_SECTION("gap=" << gap) {
@@ -87,8 +86,7 @@ TEST_CASE("Per-object skirts group when objects are close", "[SkirtBrim][NotWork
     }
 }
 
-// [NotWorking]: flaky on arm64 CI (intermittent ClipperLib "Coordinate outside allowed range" throw).
-TEST_CASE("Combine brims merges touching brims", "[SkirtBrim][NotWorking]")
+TEST_CASE("Combine brims merges touching brims", "[SkirtBrim]")
 {
     auto [gap, combine, expected_brims] = GENERATE(table<double, int, int>({
         { 5.0,  1, 1 },   // touching + combine -> one merged brim
@@ -115,8 +113,7 @@ TEST_CASE("Combine brims merges touching brims", "[SkirtBrim][NotWorking]")
 }
 
 // Each object's skirt and brim come right before that object, not all skirts then all brims first.
-// [NotWorking]: flaky on arm64 CI (intermittent ClipperLib "Coordinate outside allowed range" throw).
-TEST_CASE("By-layer per-object skirt and brim precede each object", "[SkirtBrim][NotWorking]")
+TEST_CASE("By-layer per-object skirt and brim precede each object", "[SkirtBrim]")
 {
     const std::string gcode = slice_two_cubes_apart(60, { // far apart: a skirt+brim per object
         { "skirt_loops",    1 },
@@ -213,8 +210,7 @@ TEST_CASE("Skirt height is honored", "[SkirtBrim]") {
     REQUIRE(layers_with_role(gcode, "skirt").size() == (size_t) config.opt_int("skirt_height"));
 }
 
-// [NotWorking]: the overhang+support sections are flaky on arm64 CI (intermittent ClipperLib "Coordinate outside allowed range" throw).
-SCENARIO("Skirt and brim generation", "[SkirtBrim][NotWorking]") {
+SCENARIO("Skirt and brim generation", "[SkirtBrim]") {
     GIVEN("A default configuration") {
         DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
         config.set_num_extruders(4);
