@@ -304,13 +304,10 @@ TEST_CASE("Arrange: over-capacity items overflow to a second plate", "[arrange][
 
 TEST_CASE("Arrange: single object always fits on large bed", "[arrange][seq][xy_clearance]")
 {
-    const bool all_placed = do_arrange(
-        []{
-            ArrangePolygons v;
-            v.push_back(make_ap(make_rect(57.0, 75.0)));
-            return v;
-        }(),
-        seq_xy_params(), 278.0, 296.0);
+    ArrangePolygons items;
+    items.push_back(make_ap(make_rect(57.0, 75.0)));
+
+    const bool all_placed = do_arrange(items, seq_xy_params(), 278.0, 296.0);
     REQUIRE(all_placed);
 }
 
