@@ -14,10 +14,8 @@ rebuild would otherwise drop them silently (this happened once, on 2026-06-28).
 | Feature | Branch | Upstream PR |
 |---------|--------|-------------|
 | Fork-only docs (this file + README banner) | `fork-docs` | n/a |
-| filament_end_gcode layer_z with wipe tower | `fix/filament-end-gcode-layer-z` | OrcaSlicer/OrcaSlicer#14462 |
 | MMU slicing crash with line width 0 | `fix/mmu-segmentation-zero-width` | OrcaSlicer/OrcaSlicer#14455 |
 | PA-pattern calibration over-retracts with absolute E | `fix/pa-pattern-absolute-e-reset` | OrcaSlicer/OrcaSlicer#14473 |
-| Re-enable fff_print tests disabled by clipper throw | `test/reenable-fff-clipper-tests` | OrcaSlicer/OrcaSlicer#14482 |
 | Unit tests on Windows/macOS | `feature/ci-cross-platform-tests` | OrcaSlicer/OrcaSlicer#14443 |
 | Honor "Ignore" when layer height exceeds max | `fix/layer-height-ignore-honored` | OrcaSlicer/OrcaSlicer#14369 |
 | fff_print test framework | `feature/gcode-test-framework` | OrcaSlicer/OrcaSlicer#14426 |
@@ -34,10 +32,8 @@ branches are local WIP features.
 git fetch upstream
 git checkout -B main upstream/main
 git merge --no-ff fork-docs                          # FIRST: re-applies FORK.md + README banner
-git merge --no-ff fix/filament-end-gcode-layer-z
 git merge --no-ff fix/mmu-segmentation-zero-width
 git merge --no-ff fix/pa-pattern-absolute-e-reset
-git merge --no-ff test/reenable-fff-clipper-tests
 git merge --no-ff feature/ci-cross-platform-tests
 git merge --no-ff fix/layer-height-ignore-honored
 git merge --no-ff feature/additional_prepare_time
