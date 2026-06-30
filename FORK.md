@@ -19,6 +19,7 @@ rebuild would otherwise drop them silently (this happened once, on 2026-06-28).
 | Unit tests on Windows/macOS | `feature/ci-cross-platform-tests` | OrcaSlicer/OrcaSlicer#14443 |
 | Honor "Ignore" when layer height exceeds max | `fix/layer-height-ignore-honored` | OrcaSlicer/OrcaSlicer#14369 |
 | fff_print test framework | `feature/gcode-test-framework` | OrcaSlicer/OrcaSlicer#14426 |
+| First printable object name in filename | `fix/object-name-placeholder` | OrcaSlicer/OrcaSlicer#14497 |
 | Additional prepare time | `feature/additional_prepare_time` | none yet (WIP) |
 | Extruder clearance X/Y | `feature/extruder-clearance-rectangle` | none yet (WIP) |
 
@@ -38,6 +39,7 @@ git merge --no-ff feature/ci-cross-platform-tests
 git merge --no-ff fix/layer-height-ignore-honored
 git merge --no-ff feature/additional_prepare_time
 git merge --no-ff feature/gcode-test-framework
+git merge --no-ff fix/object-name-placeholder
 git merge --no-ff feature/extruder-clearance-rectangle
 git push myfork main
 ```
