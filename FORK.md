@@ -1,8 +1,8 @@
 # Fork maintenance notes (myfork/main)
 
 `myfork/main` (github.com/raistlin7447/OrcaSlicer) is a personal daily-driver build:
-latest `upstream/main` plus my in-flight open-PR branches and a couple of WIP
-features, each kept on its own branch so it can be dropped once it lands upstream.
+latest `upstream/main` plus my in-flight open-PR branches and a WIP feature, each
+kept on its own branch so it can be dropped once it lands upstream.
 
 The fork-only docs (this `FORK.md` and the README banner) live on their own
 `fork-docs` branch and are re-applied by merging it like any other branch. They are
@@ -22,12 +22,15 @@ rebuild would otherwise drop them silently (this happened once, on 2026-06-28).
 | First printable object name in filename | `fix/object-name-placeholder` | OrcaSlicer/OrcaSlicer#14497 |
 | Crash when rotating the prime tower | `fix/wipe-tower-rotate-crash` | OrcaSlicer/OrcaSlicer#14499 |
 | Stale instance ids in PartPlate scans | `fix/partplate-stale-instance-crash` | OrcaSlicer/OrcaSlicer#14523 |
-| Additional prepare time | `feature/additional_prepare_time` | none yet (WIP) |
 | Extruder clearance X/Y | `feature/extruder-clearance-rectangle` | none yet (WIP) |
 
 Open-PR branches join the integrated set automatically (they are in-flight work run
-on the daily driver) and drop off once their PR merges upstream. The two `none yet`
-branches are local WIP features.
+on the daily driver) and drop off once their PR merges upstream. The `none yet`
+branch is a local WIP feature.
+
+`feature/additional_prepare_time` was retired from this set on 2026-07-02, superseded
+upstream by OrcaSlicer/OrcaSlicer#14520. The branch is kept on `myfork` for reference
+but is no longer merged into `main` or synced with `upstream/main`.
 
 ## Re-syncing onto latest upstream
 
@@ -39,7 +42,6 @@ git merge --no-ff fix/mmu-segmentation-zero-width
 git merge --no-ff fix/pa-pattern-absolute-e-reset
 git merge --no-ff feature/ci-cross-platform-tests
 git merge --no-ff fix/layer-height-ignore-honored
-git merge --no-ff feature/additional_prepare_time
 git merge --no-ff feature/gcode-test-framework
 git merge --no-ff fix/object-name-placeholder
 git merge --no-ff fix/wipe-tower-rotate-crash
@@ -54,10 +56,9 @@ commits added on GitHub before they are merged here.
 Merge `fork-docs` first: `checkout -B main upstream/main` resets `main` to a clean
 upstream tree, dropping the fork-only docs, and merging `fork-docs` brings them back
 (see conflict 1 for the rare README case). Then merge the features smallest first,
-clearance last. `feature/additional_prepare_time` must come **before**
-`feature/gcode-test-framework` (see conflict 2 below). Incrementally adding only the
-new open-PR branches onto an up-to-date `main` works too, since the
-bug-fix/CI/test/GUI branches don't touch the clearance code.
+clearance last. Incrementally adding only the new open-PR branches onto an
+up-to-date `main` works too, since the bug-fix/CI/test/GUI branches don't touch the
+clearance code.
 
 ### Conflicts to expect
 
@@ -66,15 +67,6 @@ bug-fix/CI/test/GUI branches don't touch the clearance code.
    `fork-docs`; the merge re-applies it while keeping upstream's README body. Keep
    the blockquote at the top, take upstream's changes below it. Usually no conflict,
    and git rerere auto-resolves it when there is one.
-
-2. `tests/fff_print/test_gcode.cpp` (modify/delete, `feature/gcode-test-framework`).
-   The framework branch deletes `test_gcode.cpp` (its "Origin manipulation" test
-   moves to `test_gcodewriter.cpp`), but `feature/additional_prepare_time` added two
-   fork-only `machine_additional_prepare_time` SCENARIOs to that same file. rerere
-   does not handle modify/delete. Resolve by keeping a slimmed `test_gcode.cpp` that
-   holds **only** the two prepare-time SCENARIOs (drop the duplicated origin test),
-   and re-add `test_gcode.cpp` to `tests/fff_print/CMakeLists.txt` (the framework
-   branch removes it). This is why prepare-time must merge before the framework.
 
 ## Keeping feature branches current
 
@@ -88,9 +80,11 @@ For each branch it fetches upstream + myfork, and if the local copy is behind it
 myfork counterpart (e.g. PR commits added via GitHub) it resets to the remote head
 first, then merges `upstream/main` and pushes. Branches checked out in worktrees
 are handled in place; on conflict it aborts that branch and tells you where to
-resolve it. Edit the `BRANCHES` list in the script as branches come and go (drop
-one once its PR merges upstream). `fork-docs` is in that list too, so its README
-base tracks upstream and the banner re-merges cleanly.
+resolve it. The branch list is derived live from the `feature/`/`fix/` prefixes
+(minus open-PR branches, which `sync-open-pr-branches.sh` handles) so it never goes
+stale as branches come and go; retiring a branch from maintenance is a one-line add
+to `RETIRED_BRANCHES` in the script. `fork-docs` is tracked too, so its README base
+tracks upstream and the banner re-merges cleanly.
 
 Manual equivalent for a single branch:
 
