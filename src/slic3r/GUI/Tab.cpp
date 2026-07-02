@@ -2092,21 +2092,8 @@ void Tab::on_value_change(const std::string& opt_key, const boost::any& value)
                 new_conf.set_key_value("layer_height", new ConfigOptionFloat(layer_height_floor));
                 m_config_manipulation.apply(m_config, &new_conf);
             } else {
-                wxString msg_text = _(L("Layer height exceeds the limit in Printer Settings -> Extruder -> Layer height limits, "
-                                        "this may cause printing quality issues."));
-                msg_text += "\n\n" + _(L("Adjust to the set range automatically?\n"));
-                MessageDialog dialog(wxGetApp().plater(), msg_text, "", wxICON_WARNING | wxYES | wxNO);
-                dialog.SetButtonLabel(wxID_YES, _L("Adjust"));
-                dialog.SetButtonLabel(wxID_NO, _L("Ignore"));
-                auto answer   = dialog.ShowModal();
-                auto new_conf = *m_config;
-                if (answer == wxID_YES) {
-                    if (exceed_maximum_flag)
-                        new_conf.set_key_value("layer_height", new ConfigOptionFloat(layer_height_ceil));
-                    if (exceed_minimum_flag)
-                        new_conf.set_key_value("layer_height", new ConfigOptionFloat(layer_height_floor));
-                    m_config_manipulation.apply(m_config, &new_conf);
-                }
+                m_config_manipulation.layer_height_out_of_range_dialog(
+                    m_config, exceed_maximum_flag ? layer_height_ceil : layer_height_floor);
             }
             wxGetApp().plater()->update();
         }
