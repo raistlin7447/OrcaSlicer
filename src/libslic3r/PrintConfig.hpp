@@ -144,6 +144,12 @@ enum class WallDirection
     Count,
 };
 
+enum class ExtruderClearanceType {
+    Radius,
+    XY,
+    Count,
+};
+
 //BBS
 enum class PrintSequence {
     ByLayer,
@@ -156,6 +162,12 @@ enum class PrintOrder
 {
     Default,
     AsObjectList,
+    Count,
+};
+
+enum class ByObjectSequenceOrder {
+    Default,  // use model object list order
+    Auto,     // spatial sort: front-to-back rows, left-to-right within each row
     Count,
 };
 
@@ -1525,8 +1537,9 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionBools,              enable_overhang_bridge_fan))
     ((ConfigOptionInts,               overhang_fan_speed))
     ((ConfigOptionEnumsGeneric,       overhang_fan_threshold))
-    ((ConfigOptionEnum<PrintSequence>,print_sequence))
-    ((ConfigOptionEnum<PrintOrder>,   print_order))
+    ((ConfigOptionEnum<PrintSequence>,        print_sequence))
+    ((ConfigOptionEnum<PrintOrder>,           print_order))
+    ((ConfigOptionEnum<ByObjectSequenceOrder>,by_object_sequence_order))
     ((ConfigOptionInts,               first_layer_print_sequence))
     ((ConfigOptionInts,               other_layers_print_sequence))
     ((ConfigOptionInt,                other_layers_print_sequence_nums))
@@ -1535,7 +1548,11 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionEnum<DraftShield>,  draft_shield))
     ((ConfigOptionFloat,              extruder_clearance_height_to_rod))//BBs
     ((ConfigOptionFloat,              extruder_clearance_height_to_lid))//BBS
+    ((ConfigOptionEnum<ExtruderClearanceType>, extruder_clearance_type))
     ((ConfigOptionFloat,              extruder_clearance_radius))
+    ((ConfigOptionFloat,              extruder_clearance_x))
+    ((ConfigOptionFloat,              extruder_clearance_y))
+    ((ConfigOptionBool,               sequential_print_collision_override))
     ((ConfigOptionFloat,              nozzle_height))
     ((ConfigOptionStrings,            extruder_colour))
     ((ConfigOptionPoints,             extruder_offset))

@@ -1338,7 +1338,7 @@ int CLI::run(int argc, char **argv)
     int current_printable_width, current_printable_depth, current_printable_height, shrink_to_new_bed = 0;
     int old_printable_height = 0, old_printable_width = 0, old_printable_depth = 0;
     Pointfs old_printable_area, old_exclude_area;
-    float old_max_radius = 0.f, old_height_to_rod = 0.f, old_height_to_lid = 0.f;
+    float old_effective_clearance = 0.f, old_height_to_rod = 0.f, old_height_to_lid = 0.f;
     std::vector<double> old_max_layer_height, old_min_layer_height;
     std::string outfile_dir              =  m_config.opt_string("outputdir", true);
     const std::vector<std::string>              &load_configs               = m_config.option<ConfigOptionStrings>("load_settings", true)->values;
@@ -1784,13 +1784,24 @@ int CLI::run(int argc, char **argv)
                     if (config.option<ConfigOptionFloat>("extruder_clearance_height_to_lid"))
                         old_height_to_lid = config.opt_float("extruder_clearance_height_to_lid");
                     if (config.option<ConfigOptionFloat>("extruder_clearance_radius"))
-                        old_max_radius = config.opt_float("extruder_clearance_radius");
+                        old_effective_clearance = config.opt_float("extruder_clearance_radius");
+                    // If the saved project used XY-mode clearance, use max(x,y) — the same
+                    // formula as the runtime effective_clearance computation — to avoid a
+                    // spurious re-arrange when loading an XY-mode file into an XY-mode printer.
+                    {
+                        const auto* xy_type = config.option<ConfigOptionEnum<ExtruderClearanceType>>("extruder_clearance_type");
+                        if (xy_type && xy_type->value == ExtruderClearanceType::XY &&
+                            config.option<ConfigOptionFloat>("extruder_clearance_x") &&
+                            config.option<ConfigOptionFloat>("extruder_clearance_y"))
+                            old_effective_clearance = std::max(config.opt_float("extruder_clearance_x"),
+                                                               config.opt_float("extruder_clearance_y"));
+                    }
                     if (config.option<ConfigOptionFloats>("max_layer_height"))
                         old_max_layer_height = config.option<ConfigOptionFloats>("max_layer_height")->values;
                     if (config.option<ConfigOptionFloats>("min_layer_height"))
                         old_min_layer_height = config.option<ConfigOptionFloats>("min_layer_height")->values;
                     BOOST_LOG_TRIVIAL(info) << boost::format("old printable size from 3mf: {%1%, %2%, %3%}")%old_printable_width %old_printable_depth %old_printable_height;
-                    BOOST_LOG_TRIVIAL(info) << boost::format("old extruder_clearance_height_to_rod %1%, extruder_clearance_height_to_lid %2%, extruder_clearance_radius %3%}")%old_height_to_rod %old_height_to_lid %old_max_radius;
+                    BOOST_LOG_TRIVIAL(info) << boost::format("old extruder_clearance_height_to_rod %1%, extruder_clearance_height_to_lid %2%, old_effective_clearance %3%}")%old_height_to_rod %old_height_to_lid %old_effective_clearance;
                 }
                 else
                 {
@@ -3712,7 +3723,12 @@ int CLI::run(int argc, char **argv)
     std::vector<double> current_extruder_print_heights;
     double height_to_lid = m_print_config.opt_float("extruder_clearance_height_to_lid");
     double height_to_rod = m_print_config.opt_float("extruder_clearance_height_to_rod");
+    double clearance_x = m_print_config.opt_float("extruder_clearance_x");
+    double clearance_y = m_print_config.opt_float("extruder_clearance_y");
     double clearance_radius = m_print_config.opt_float("extruder_clearance_radius");
+    bool use_xy_clearance = m_print_config.opt_enum<ExtruderClearanceType>("extruder_clearance_type") == ExtruderClearanceType::XY;
+    // For change detection we need a single scalar; use max(x,y) in XY mode.
+    double effective_clearance = use_xy_clearance ? std::max(clearance_x, clearance_y) : clearance_radius;
     int shared_printable_width = 0, shared_printable_depth = 0, shared_printable_height = 0, shared_center_x = 0, shared_center_y = 0;
     //double plate_stride;
     std::string bed_texture;
@@ -4610,12 +4626,12 @@ int CLI::run(int argc, char **argv)
     {
         if (((old_height_to_rod != 0.f) && (old_height_to_rod != height_to_rod))
             || ((old_height_to_lid != 0.f) && (old_height_to_lid != height_to_lid))
-            || ((old_max_radius != 0.f) && (old_max_radius != clearance_radius)))
+            || ((old_effective_clearance != 0.f) && (old_effective_clearance != effective_clearance)))
         {
             if (is_seq_print_for_curr_plate) {
                 need_arrange = true;
-                BOOST_LOG_TRIVIAL(info) << boost::format("old_height_to_rod %1%, old_height_to_lid %2%,  old_max_radius %3%, current height_to_rod %4%, height_to_lid %5%, clearance_radius %6%, need arrange!")
-                    %old_height_to_rod %old_height_to_lid %old_max_radius %height_to_rod %height_to_lid %clearance_radius;
+                BOOST_LOG_TRIVIAL(info) << boost::format("old_height_to_rod %1%, old_height_to_lid %2%, old_effective_clearance %3%, current height_to_rod %4%, height_to_lid %5%, effective_clearance %6%, need arrange!")
+                    %old_height_to_rod %old_height_to_lid %old_effective_clearance %height_to_rod %height_to_lid %effective_clearance;
             }
         }
     }
@@ -4768,6 +4784,9 @@ int CLI::run(int argc, char **argv)
                 arrange_cfg.avoid_extrusion_cali_region = avoid_extrusion_cali_region;
                 arrange_cfg.clearance_height_to_rod = height_to_rod;
                 arrange_cfg.clearance_height_to_lid = height_to_lid;
+                arrange_cfg.use_xy_clearance = use_xy_clearance;
+                arrange_cfg.clearance_x = clearance_x;
+                arrange_cfg.clearance_y = clearance_y;
                 arrange_cfg.clearance_radius = clearance_radius;
                 arrange_cfg.printable_height = print_height;
                 arrange_cfg.min_obj_distance = 0;
@@ -5218,7 +5237,10 @@ int CLI::run(int argc, char **argv)
                 arrange_cfg.avoid_extrusion_cali_region         = avoid_extrusion_cali_region;
                 arrange_cfg.clearance_height_to_rod             = height_to_rod;
                 arrange_cfg.clearance_height_to_lid             = height_to_lid;
-                arrange_cfg.clearance_radius                   = clearance_radius;
+                arrange_cfg.use_xy_clearance                    = use_xy_clearance;
+                arrange_cfg.clearance_x                         = clearance_x;
+                arrange_cfg.clearance_y                         = clearance_y;
+                arrange_cfg.clearance_radius                    = clearance_radius;
                 arrange_cfg.printable_height                    = print_height;
                 arrange_cfg.min_obj_distance = 0;
                 if (arrange_cfg.is_seq_print) {

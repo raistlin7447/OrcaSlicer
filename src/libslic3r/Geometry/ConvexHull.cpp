@@ -37,6 +37,17 @@ Polygon convex_hull(Points pts)
     return hull;
 }
 
+Polygon minkowski_rect(const Polygon &poly, coord_t dx, coord_t dy)
+{
+    Points pts;
+    pts.reserve(4 * poly.points.size());
+    for (const Point &p : poly.points)
+        for (coord_t sx : {-dx, dx})
+            for (coord_t sy : {-dy, dy})
+                pts.push_back({p.x() + sx, p.y() + sy});
+    return convex_hull(std::move(pts));
+}
+
 Pointf3s convex_hull(Pointf3s points)
 {
     assert(points.size() >= 3);

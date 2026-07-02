@@ -3,6 +3,9 @@
 #include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/PrintConfigConstants.hpp"
 #include "libslic3r/LocalesUtils.hpp"
+#include "libslic3r/Preset.hpp"
+
+#include <algorithm>
 
 #include <cereal/types/polymorphic.hpp>
 #include <cereal/types/string.hpp> 
@@ -10,6 +13,67 @@
 #include <cereal/archives/binary.hpp>
 
 using namespace Slic3r;
+
+SCENARIO("Sequential-print options are registered as print options.", "[Config]") {
+    // A print setting shown in the Print Settings tab must be listed in
+    // Preset::print_options(), otherwise the print preset's config has no backing
+    // ConfigOption for the key and building its GUI field dereferences a null
+    // option() pointer (crash). Guards the sequential_print_collision_override
+    // option added for the collision override feature.
+    GIVEN("Preset::print_options()") {
+        const std::vector<std::string>& opts = Preset::print_options();
+        THEN("it contains sequential_print_collision_override") {
+            REQUIRE(std::find(opts.begin(), opts.end(),
+                "sequential_print_collision_override") != opts.end());
+        }
+        THEN("it contains by_object_sequence_order (the sibling option)") {
+            REQUIRE(std::find(opts.begin(), opts.end(),
+                "by_object_sequence_order") != opts.end());
+        }
+    }
+}
+
+SCENARIO("Legacy profiles derive X/Y extruder clearance from the radius.", "[Config]") {
+    // The rectangular X/Y extruder-clearance options were added after extruder_clearance_radius.
+    // handle_legacy_composite() must fill X/Y from the radius for profiles that predate them,
+    // while leaving any explicitly-set X/Y untouched.
+    GIVEN("A profile fragment that sets only extruder_clearance_radius") {
+        DynamicPrintConfig config;
+        config.set_key_value("extruder_clearance_radius", new ConfigOptionFloat(57.0));
+        WHEN("handle_legacy_composite runs") {
+            PrintConfigDef::handle_legacy_composite(config);
+            THEN("X and Y clearance are derived from the radius") {
+                REQUIRE(config.has("extruder_clearance_x"));
+                REQUIRE(config.has("extruder_clearance_y"));
+                REQUIRE(config.opt_float("extruder_clearance_x") == Catch::Approx(57.0));
+                REQUIRE(config.opt_float("extruder_clearance_y") == Catch::Approx(57.0));
+            }
+        }
+    }
+    GIVEN("A profile fragment that sets radius and an explicit clearance_x") {
+        DynamicPrintConfig config;
+        config.set_key_value("extruder_clearance_radius", new ConfigOptionFloat(57.0));
+        config.set_key_value("extruder_clearance_x", new ConfigOptionFloat(30.0));
+        WHEN("handle_legacy_composite runs") {
+            PrintConfigDef::handle_legacy_composite(config);
+            THEN("the explicit X is preserved and only Y is derived") {
+                REQUIRE(config.opt_float("extruder_clearance_x") == Catch::Approx(30.0)); // untouched
+                REQUIRE(config.opt_float("extruder_clearance_y") == Catch::Approx(57.0)); // derived
+            }
+        }
+    }
+    GIVEN("A profile fragment with no extruder clearance keys") {
+        DynamicPrintConfig config;
+        config.set_key_value("layer_height", new ConfigOptionFloat(0.2));
+        WHEN("handle_legacy_composite runs") {
+            PrintConfigDef::handle_legacy_composite(config);
+            THEN("no X/Y clearance keys are injected") {
+                REQUIRE_FALSE(config.has("extruder_clearance_x"));
+                REQUIRE_FALSE(config.has("extruder_clearance_y"));
+            }
+        }
+    }
+}
 
 SCENARIO("Generic config validation performs as expected.", "[Config]") {
     GIVEN("A config generated from default options") {

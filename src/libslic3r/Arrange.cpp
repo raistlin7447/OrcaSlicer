@@ -1,6 +1,7 @@
 #include "Arrange.hpp"
 #include "Print.hpp"
 #include "BoundingBox.hpp"
+#include "Geometry/ConvexHull.hpp"
 #include "libslic3r.h"
 
 #include <libnest2d/backends/libslic3r/geometries.hpp>
@@ -90,11 +91,32 @@ void update_arrange_params(ArrangeParams& params, const DynamicPrintConfig* prin
     params.brim_skirt_distance = skirt_distance;
     params.bed_shrink_x += params.brim_skirt_distance;
     params.bed_shrink_y += params.brim_skirt_distance;
-    // for sequential print, we need to inflate the bed because clearance_radius is so large
+    // for sequential print, we need to inflate the bed because clearance is so large
     if (params.is_seq_print) {
-        params.bed_shrink_x -= params.clearance_radius / 2;
-        params.bed_shrink_y -= params.clearance_radius / 2;
+        if (params.use_xy_clearance) {
+            // Halve the bed expansion to match the half-clearance Minkowski inflation applied to each
+            // object polygon.  The packing engine sees expanded polygons, so the effective exclusion
+            // zone between two objects is clearance_x (each side contributes clearance_x/2), matching
+            // the radius-mode convention where inflation = clearance_radius/2.
+            params.bed_shrink_x -= params.clearance_x / 2;
+            params.bed_shrink_y -= params.clearance_y / 2;
+        } else {
+            params.bed_shrink_x -= params.clearance_radius / 2;
+            params.bed_shrink_y -= params.clearance_radius / 2;
+        }
     }
+}
+
+/// Build an axis-aligned rectangle centred at the origin with half-extents (hw, hh),
+/// pre-rotated by -rotation so that ArrangePolygon::transformed_poly() (which applies
+/// +rotation then +translation) reproduces the axis-aligned world-space rectangle exactly.
+/// This preserves ap.rotation for apply_arrange_result, which writes it back as an
+/// absolute Z-rotation, so the user-set rotation survives arrangement.
+static Polygon make_clearance_local_rect(coord_t hw, coord_t hh, double rotation)
+{
+    Polygon r({{ -hw,-hh }, { +hw,-hh }, { +hw,+hh }, { -hw,+hh }});
+    r.rotate(-rotation);
+    return r;
 }
 
 void update_selected_items_inflation(ArrangePolygons& selected, const DynamicPrintConfig* print_cfg, ArrangeParams& params) {
@@ -103,12 +125,39 @@ void update_selected_items_inflation(ArrangePolygons& selected, const DynamicPri
     BoundingBox bedbb = Polygon(bedpts).bounding_box();
     // set obj distance for auto seq_print
     if (params.is_seq_print) {
-        bool all_objects_are_short = std::all_of(selected.begin(), selected.end(), [&](ArrangePolygon& ap) { return ap.height < params.nozzle_height; });
-        if (all_objects_are_short) {
-            params.min_obj_distance = std::max(params.min_obj_distance, scaled(std::max(MAX_OUTER_NOZZLE_DIAMETER/2.f, params.object_skirt_offset*2)+0.001));
+        if (params.use_xy_clearance) {
+            // XY mode: expand each footprint by half the clearance rectangle (clearance_half_x/y()
+            // is the shared per-side accessor).  We use the world-space axis-aligned bounding box
+            // rather than the exact Minkowski shape so the packer tiles objects in a strict
+            // rectangular grid instead of exploiting rounded corners for irregular staggering.
+            // ap.inflation is set to 0; the brim/tree-support block below adds only brim width
+            // on top (params.min_obj_distance stays 0, so it takes the brim branch).
+            // NOTE: falls through to the brim block below — do not return early.
+            const coord_t dx = scale_(params.clearance_half_x() + 0.0005f);
+            const coord_t dy = scale_(params.clearance_half_y() + 0.0005f);
+            for (auto& ap : selected) {
+                BoundingBox bb = ap.transformed_poly().contour.bounding_box();
+                bb.min -= Point(dx, dy);
+                bb.max += Point(dx, dy);
+                const Point   ctr = bb.center();
+                const coord_t hw  = bb.max.x() - ctr.x();
+                const coord_t hh  = bb.max.y() - ctr.y();
+                ap.poly.contour = make_clearance_local_rect(hw, hh, ap.rotation);
+                ap.poly.holes.clear();
+                ap.translation = ctr;
+                // ap.rotation intentionally preserved — see make_clearance_local_rect.
+                ap.inflation   = 0;
+            }
+            // Falls through to brim/tree-support block below.
+        } else {
+            // Radius mode: short objects only need nozzle-tip clearance (not the full head radius).
+            bool all_objects_are_short = std::all_of(selected.begin(), selected.end(), [&](ArrangePolygon& ap) { return ap.height < params.nozzle_height; });
+            if (all_objects_are_short) {
+                params.min_obj_distance = std::max(params.min_obj_distance, scaled(std::max(MAX_OUTER_NOZZLE_DIAMETER/2.f, params.object_skirt_offset*2)+0.001));
+            } else {
+                params.min_obj_distance = std::max(params.min_obj_distance, scaled(params.clearance_radius + 0.001)); // +0.001mm to avoid clearance check fail due to rounding error
+            }
         }
-        else
-            params.min_obj_distance = std::max(params.min_obj_distance, scaled(params.clearance_radius + 0.001)); // +0.001mm to avoid clearance check fail due to rounding error
     }
     double brim_max = 0;
     bool plate_has_tree_support = false;
@@ -135,11 +184,44 @@ void update_unselected_items_inflation(ArrangePolygons& unselected, const Dynami
 {
     float exclusion_gap = 1.f;
     if (params.is_seq_print) {
-        // bed_shrink_x is typically (-params.clearance_radius / 2+5) for seq_print
-        exclusion_gap = std::max(exclusion_gap, params.clearance_radius / 2 + params.bed_shrink_x + 1.f);  // +1mm gap so the exclusion region is not too close
-        // dont forget to move the excluded region
-        for (auto& region : unselected) {
-            if (region.is_virt_object) region.poly.translate(scaled(params.bed_shrink_x), scaled(params.bed_shrink_y));
+        if (params.use_xy_clearance) {
+            // All unselected items (virtual exclusion zones AND already-placed objects) need
+            // half-clearance expansion so the packer keeps the full clearance gap around them.
+            // Use clearance_half_x/y() — the same shared accessor used for selected items.
+            const coord_t dx = scale_(params.clearance_half_x());
+            const coord_t dy = scale_(params.clearance_half_y());
+            for (auto& ap : unselected) {
+                if (ap.is_virt_object) {
+                    ap.poly.translate(scaled(params.bed_shrink_x), scaled(params.bed_shrink_y));
+                    if (!ap.is_extrusion_cali_object) {
+                        ap.poly.contour = Geometry::minkowski_rect(ap.poly.contour, dx, dy);
+                        // Clear stale holes: minkowski_rect replaces only the contour, so any
+                        // pre-existing holes would be geometrically inconsistent with the new
+                        // expanded contour (latent bug if a future virtual-object ever has holes).
+                        ap.poly.holes.clear();
+                    }
+                } else {
+                    // Non-virtual already-placed objects also need the clearance rectangle so
+                    // the packer does not position new objects inside an existing object's
+                    // extruder clearance zone.  Same world-space bbox + local-frame technique
+                    // as update_selected_items_inflation; see make_clearance_local_rect.
+                    BoundingBox bb = ap.transformed_poly().contour.bounding_box();
+                    bb.min -= Point(dx, dy);
+                    bb.max += Point(dx, dy);
+                    const Point   ctr = bb.center();
+                    const coord_t hw  = bb.max.x() - ctr.x();
+                    const coord_t hh  = bb.max.y() - ctr.y();
+                    ap.poly.contour = make_clearance_local_rect(hw, hh, ap.rotation);
+                    ap.poly.holes.clear();
+                    ap.translation = ctr;
+                }
+            }
+        } else {
+            // bed_shrink_x is typically (-params.clearance_radius / 2+5) for seq_print
+            exclusion_gap = std::max(exclusion_gap, params.clearance_radius / 2 + params.bed_shrink_x + 1.f);  // +1mm gap so the exclusion region is not too close
+            for (auto& region : unselected) {
+                if (region.is_virt_object) region.poly.translate(scaled(params.bed_shrink_x), scaled(params.bed_shrink_y));
+            }
         }
     }
     // For occulusion regions, inflation should be larger to prevent genrating brim on them.

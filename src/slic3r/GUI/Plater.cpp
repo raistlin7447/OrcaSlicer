@@ -5013,7 +5013,7 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
     //BBS: add bed_exclude_area
     , config(Slic3r::DynamicPrintConfig::new_from_defaults_keys({
         "printable_area", "bed_exclude_area", "wrapping_exclude_area", "extruder_printable_area", "bed_custom_texture", "bed_custom_model", "print_sequence",
-        "extruder_clearance_radius",
+        "extruder_clearance_type", "extruder_clearance_radius", "extruder_clearance_x", "extruder_clearance_y",
         "extruder_clearance_height_to_lid", "extruder_clearance_height_to_rod",
 		"nozzle_height", "skirt_type", "skirt_loops", "skirt_speed","min_skirt_length", "skirt_distance", "skirt_start_angle",
         "brim_width", "brim_object_gap", "brim_flow_ratio", "brim_use_efc_outline", "combine_brims", "brim_type", "nozzle_diameter", "single_extruder_multi_material", "preferred_orientation",
@@ -8142,7 +8142,18 @@ unsigned int Plater::priv::update_background_process(bool force_validation, bool
 
             process_validation_warnings(warnings);
             if (printer_technology == ptFFF) {
-                view3D->get_canvas3d()->reset_sequential_print_clearance();
+                // validate() returns no blocking error here, but it still fills the clearance
+                // polygons when a sequential-print collision was detected and the user chose to
+                // slice anyway (sequential_print_collision_override). Keep those zones on screen
+                // so it stays visually clear that a collision exists; the warning explains that
+                // printing is allowed at the user's own risk.
+                if (!polygons.empty() || !height_polygons.empty()) {
+                    view3D->get_canvas3d()->set_sequential_print_clearance_visible(true);
+                    view3D->get_canvas3d()->set_sequential_print_clearance_render_fill(true);
+                    view3D->get_canvas3d()->set_sequential_print_clearance_polygons(polygons, height_polygons);
+                } else {
+                    view3D->get_canvas3d()->reset_sequential_print_clearance();
+                }
                 view3D->get_canvas3d()->set_as_dirty();
                 view3D->get_canvas3d()->request_extra_frame();
             }
@@ -17803,7 +17814,16 @@ void Plater::validate_current_plate(bool& model_fits, bool& validate_error)
             p->notification_manager->bbl_close_3mf_warn_notification();
 
             p->process_validation_warnings(warnings);
-            p->view3D->get_canvas3d()->reset_sequential_print_clearance();
+            // Keep the clearance zones visible when a sequential-print collision was detected but
+            // overridden (sequential_print_collision_override): validate() returns no blocking
+            // error yet still fills the collision polygons. See update_background_process().
+            if (!polygons.empty() || !height_polygons.empty()) {
+                p->view3D->get_canvas3d()->set_sequential_print_clearance_visible(true);
+                p->view3D->get_canvas3d()->set_sequential_print_clearance_render_fill(true);
+                p->view3D->get_canvas3d()->set_sequential_print_clearance_polygons(polygons, height_polygons);
+            } else {
+                p->view3D->get_canvas3d()->reset_sequential_print_clearance();
+            }
             p->view3D->get_canvas3d()->set_as_dirty();
             p->view3D->get_canvas3d()->request_extra_frame();
         }
@@ -17871,6 +17891,14 @@ void Plater::open_platesettings_dialog(wxCommandEvent& evt) {
     else
         dlg.sync_print_seq(0);
 
+    {
+        int by_obj_order = 0; // Default
+        auto* opt = curr_plate->config()->option<ConfigOptionEnum<ByObjectSequenceOrder>>("by_object_sequence_order");
+        if (opt)
+            by_obj_order = int(opt->value);
+        dlg.sync_by_object_seq_order(by_obj_order);
+    }
+
     auto first_layer_print_seq = curr_plate->get_first_layer_print_sequence();
     if (first_layer_print_seq.empty())
         dlg.sync_first_layer_print_seq(0);
@@ -17924,12 +17952,21 @@ void Plater::open_platesettings_dialog(wxCommandEvent& evt) {
             curr_plate->set_spiral_vase_mode(false, true);
         }
 
+        // Save by_object_sequence_order only when print sequence is "By object"
+        if (ps_sel == int(PrintSequence::ByObject) + 1) {
+            int by_obj_order_sel = dlg.get_by_object_seq_order_choice();
+            curr_plate->config()->set_key_value("by_object_sequence_order",
+                new ConfigOptionEnum<ByObjectSequenceOrder>(ByObjectSequenceOrder(by_obj_order_sel)));
+        }
+
         update_project_dirty_from_presets();
         set_plater_dirty(true);
         BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << boost::format("select print sequence %1% for plate %2% at plate side") % ps_sel % plate_index;
         auto plate_config = *(curr_plate->config());
         wxGetApp().plater()->config_change_notification(plate_config, std::string("print_sequence"));
         update();
+        // Re-read the plate config into the params panel to reflect dialog changes
+        wxGetApp().obj_settings()->UpdateAndShow(true);
         wxGetApp().obj_list()->update_selections();
         });
     dlg.set_plate_name(from_u8(curr_plate->get_plate_name()));

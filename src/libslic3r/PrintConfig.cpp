@@ -288,6 +288,12 @@ static t_config_enum_values s_keys_map_WallDirection{
 };
 CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(WallDirection)
 
+static t_config_enum_values s_keys_map_ExtruderClearanceType {
+    { "radius", int(ExtruderClearanceType::Radius) },
+    { "xy",     int(ExtruderClearanceType::XY) },
+};
+CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(ExtruderClearanceType)
+
 //BBS
 static t_config_enum_values s_keys_map_PrintSequence {
     { "by layer",     int(PrintSequence::ByLayer) },
@@ -300,6 +306,12 @@ static t_config_enum_values s_keys_map_PrintOrder{
     { "as_obj_list", int(PrintOrder::AsObjectList)},
 };
 CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(PrintOrder)
+
+static t_config_enum_values s_keys_map_ByObjectSequenceOrder {
+    { "default", int(ByObjectSequenceOrder::Default) },
+    { "auto",    int(ByObjectSequenceOrder::Auto) },
+};
+CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(ByObjectSequenceOrder)
 
 static t_config_enum_values s_keys_map_SlicingMode {
     { "regular",        int(SlicingMode::Regular) },
@@ -1837,6 +1849,19 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionEnum<PrintOrder>(PrintOrder::Default));
 
+    def = this->add("by_object_sequence_order", coEnum);
+    def->label = L("By object order");
+    def->tooltip = L("Print order for by-object sequential mode. "
+        "\"List order\" uses the object list order as-is. "
+        "\"Spatial order\" sorts objects front-to-back and left-to-right so the toolhead never traverses over an already-printed object.");
+    def->enum_keys_map = &ConfigOptionEnum<ByObjectSequenceOrder>::get_enum_values();
+    def->enum_values.push_back("default");
+    def->enum_values.push_back("auto");
+    def->enum_labels.push_back(L("List order"));
+    def->enum_labels.push_back(L("Spatial order"));
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionEnum<ByObjectSequenceOrder>(ByObjectSequenceOrder::Default));
+
     def = this->add("slow_down_for_layer_cooling", coBools);
     def->label = L("Slow printing down for better layer cooling");
     def->tooltip = L("Enable this option to slow printing speed down to ensure that the final layer time is not shorter than the layer time threshold in \"Max fan speed threshold\", so that the layer can be cooled for a longer time. This can improve the quality for small details.");
@@ -2272,6 +2297,46 @@ void PrintConfigDef::init_fff_params()
     def->min = 0;
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(40));
+
+    def = this->add("extruder_clearance_type", coEnum);
+    def->label = L("Clearance shape");
+    def->tooltip = L("Clearance zone shape for collision avoidance in by-object printing. "
+        "Use X/Y distances for toolheads with asymmetric part cooling fans.");
+    def->enum_keys_map = &ConfigOptionEnum<ExtruderClearanceType>::get_enum_values();
+    def->enum_values.push_back("radius");
+    def->enum_values.push_back("xy");
+    def->enum_labels.push_back(L("Radius"));
+    def->enum_labels.push_back(L("X/Y distances"));
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionEnum<ExtruderClearanceType>(ExtruderClearanceType::Radius));
+
+    def = this->add("extruder_clearance_x", coFloat);
+    def->label = L("Clearance X");
+    def->tooltip = L("Distance from the extruder to the furthest edge in the X direction. Used for collision avoidance in by-object printing.");
+    def->sidetext = L("mm");
+    def->min = 0;
+    def->mode = comAdvanced;
+    // Default matches the extruder_clearance_radius default so XY mode is equivalent to
+    // radius mode out of the box. Profiles that set a custom radius but omit X/Y have these
+    // derived from their radius in PrintConfigDef::handle_legacy_composite().
+    def->set_default_value(new ConfigOptionFloat(40));
+
+    def = this->add("extruder_clearance_y", coFloat);
+    def->label = L("Clearance Y");
+    def->tooltip = L("Distance from the extruder to the furthest edge in the Y direction. Used for collision avoidance in by-object printing.");
+    def->sidetext = L("mm");
+    def->min = 0;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(40));
+
+    def = this->add("sequential_print_collision_override", coBool);
+    def->label = L("Slice despite collision risk");
+    def->tooltip = L("By-object (sequential) printing normally blocks slicing when objects are too close or too tall for the "
+        "toolhead to clear an already-printed object. Enable this to downgrade that blocking error to a warning and slice anyway. "
+        "The clearance check may be overly conservative for low objects or unusual toolheads; use this only when you have verified "
+        "that no collision will actually occur, as a real collision can damage your print or printer.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
 
     def = this->add("nozzle_height", coFloat);
     def->label = L("Nozzle height");
@@ -8307,6 +8372,18 @@ void PrintConfigDef::handle_legacy_composite(DynamicPrintConfig &config)
         }
         config.set_key_value("wiping_volumes_use_custom_matrix", new ConfigOptionBool(custom));
     }
+
+    // The rectangular X/Y extruder-clearance options were added after extruder_clearance_radius.
+    // Profiles that predate them define only the radius, so derive the X/Y clearance from it when
+    // absent. Setting clearance_x = clearance_y = radius makes XY mode match radius mode (both
+    // expand each object by clearance/2 per side) instead of falling back to the generic default.
+    if (config.has("extruder_clearance_radius")) {
+        const double radius = config.opt_float("extruder_clearance_radius");
+        if (!config.has("extruder_clearance_x"))
+            config.set_key_value("extruder_clearance_x", new ConfigOptionFloat(radius));
+        if (!config.has("extruder_clearance_y"))
+            config.set_key_value("extruder_clearance_y", new ConfigOptionFloat(radius));
+    }
 }
 
 const PrintConfigDef print_config_def;
@@ -8496,9 +8573,14 @@ double min_object_distance(const ConfigBase &cfg)
         if (!ecr_opt || !co_opt)
             ret = 0.;
         else {
-            // min object distance is max(duplicate_distance, clearance_radius)
-            ret = ((co_opt->value == PrintSequence::ByObject) && ecr_opt->value > duplicate_distance) ?
-                      ecr_opt->value : duplicate_distance;
+            auto type_opt = cfg.option<ConfigOptionEnum<ExtruderClearanceType>>("extruder_clearance_type");
+            auto cx_opt   = cfg.option<ConfigOptionFloat>("extruder_clearance_x");
+            auto cy_opt   = cfg.option<ConfigOptionFloat>("extruder_clearance_y");
+            double clearance = (type_opt && type_opt->value == ExtruderClearanceType::XY && cx_opt && cy_opt)
+                ? std::max(cx_opt->value, cy_opt->value)
+                : ecr_opt->value;
+            ret = ((co_opt->value == PrintSequence::ByObject) && clearance > duplicate_distance) ?
+                      clearance : duplicate_distance;
         }
     }
 
@@ -10421,9 +10503,15 @@ std::map<std::string, std::string> validate(const FullPrintConfig &cfg, bool und
         error_message.emplace("internal_bridge_flow", L("invalid value ") + std::to_string(cfg.internal_bridge_flow));
     }
 
-    // extruder clearance
-    if (cfg.extruder_clearance_radius <= 0) {
-        error_message.emplace("extruder_clearance_radius", L("invalid value ") + std::to_string(cfg.extruder_clearance_radius));
+    // extruder clearance — validate whichever fields are active
+    if (cfg.extruder_clearance_type == ExtruderClearanceType::XY) {
+        if (cfg.extruder_clearance_x <= 0)
+            error_message.emplace("extruder_clearance_x", L("invalid value ") + std::to_string(cfg.extruder_clearance_x));
+        if (cfg.extruder_clearance_y <= 0)
+            error_message.emplace("extruder_clearance_y", L("invalid value ") + std::to_string(cfg.extruder_clearance_y));
+    } else {
+        if (cfg.extruder_clearance_radius <= 0)
+            error_message.emplace("extruder_clearance_radius", L("invalid value ") + std::to_string(cfg.extruder_clearance_radius));
     }
     if (cfg.extruder_clearance_height_to_rod <= 0) {
         error_message.emplace("extruder_clearance_height_to_rod", L("invalid value ") + std::to_string(cfg.extruder_clearance_height_to_rod));

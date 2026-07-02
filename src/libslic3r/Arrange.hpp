@@ -133,6 +133,17 @@ struct ArrangeParams {
     float clearance_height_to_rod = 0;
     float clearance_height_to_lid = 0;
     float clearance_radius = 0;
+    float clearance_x = 0;
+    float clearance_y = 0;
+    bool  use_xy_clearance = false;
+
+    /// Per-side half-clearance accessors for XY mode.
+    /// Each object's footprint is inflated by clearance_half_x()/clearance_half_y() on each side
+    /// so that two adjacent objects' zones span exactly the full clearance gap.
+    /// Use these in Arrange.cpp instead of inlining clearance_x/2 to keep Arrange.cpp,
+    /// Print.cpp, and GLCanvas3D.cpp on the same convention and prevent drift.
+    float clearance_half_x() const { return clearance_x * 0.5f; }
+    float clearance_half_y() const { return clearance_y * 0.5f; }
     float object_skirt_offset = 0;
     float nozzle_height = 0;
     float printable_height = 256.0;
@@ -171,6 +182,9 @@ struct ArrangeParams {
         ret += "\"clearance_height_to_rod\":" + std::to_string(clearance_height_to_rod) + ",";
         ret += "\"clearance_height_to_lid\":" + std::to_string(clearance_height_to_lid) + ",";
         ret += "\"clearance_radius\":" + std::to_string(clearance_radius) + ",";
+        ret += "\"clearance_x\":" + std::to_string(clearance_x) + ",";
+        ret += "\"clearance_y\":" + std::to_string(clearance_y) + ",";
+        ret += "\"use_xy_clearance\":" + std::to_string(use_xy_clearance) + ",";
         ret += "\"printable_height\":" + std::to_string(printable_height) + ",";
         return ret;
     }

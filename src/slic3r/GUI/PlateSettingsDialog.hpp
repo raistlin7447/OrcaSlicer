@@ -100,6 +100,7 @@ public:
     ~PlateSettingsDialog();
     void sync_bed_type(BedType type);
     void sync_print_seq(int print_seq = 0);
+    void sync_by_object_seq_order(int by_object_seq_order);
     void sync_first_layer_print_seq(int selection, const std::vector<int>& seq = std::vector<int>());
     void sync_other_layers_print_seq(int selection, const std::vector<LayerPrintSequence>& seq);
     void sync_spiral_mode(bool spiral_mode, bool as_global);
@@ -111,6 +112,13 @@ public:
         int choice = 0;
         if (m_print_seq_choice != nullptr)
             choice =  m_print_seq_choice->GetSelection();
+        return choice;
+    }
+
+    int get_by_object_seq_order_choice() {
+        int choice = 0;
+        if (m_by_object_seq_order_choice != nullptr)
+            choice = m_by_object_seq_order_choice->GetSelection();
         return choice;
     }
 
@@ -159,11 +167,15 @@ public:
 protected:
     void add_layers();
     void delete_layers();
+    /// Show or hide the by-object-order row and re-layout the dialog.
+    void show_by_object_seq_order(bool show);
 
 protected:
     ComboBox* m_bed_type_choice { nullptr };
     std::vector<BedType> m_cur_combox_bed_types;
     ComboBox* m_print_seq_choice { nullptr };
+    ComboBox* m_by_object_seq_order_choice { nullptr };
+    wxStaticText* m_by_object_seq_order_txt { nullptr };
     ComboBox* m_first_layer_print_seq_choice { nullptr };
     ComboBox* m_spiral_mode_choice { nullptr };
     DragCanvas* m_drag_canvas;

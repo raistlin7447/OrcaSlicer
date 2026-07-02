@@ -86,7 +86,22 @@ int mode_to_selection(ConfigOptionMode mode)
 // Forward declaration for early use; definitions live later in this translation unit.
 static void validate_custom_gcode_cb(Tab* tab, const wxString& title, const t_config_option_key& opt_key, const boost::any& value);
 
-static const std::vector<std::string> plate_keys = { "curr_bed_type", "skirt_start_angle", "first_layer_print_sequence", "first_layer_sequence_choice", "other_layers_print_sequence", "other_layers_sequence_choice", "print_sequence", "spiral_mode"};
+// IMPORTANT: plate_keys must be sorted alphabetically.
+// update_model_config() uses lower_bound (binary search) on m_keys (which is built from plate_keys)
+// to filter which plate config keys get applied to m_config. An unsorted list causes lower_bound
+// to silently miss keys like "print_sequence" and "by_object_sequence_order", so plate-specific
+// overrides for those options are never loaded — the UI always shows the global preset value instead.
+static const std::vector<std::string> plate_keys = {
+    "by_object_sequence_order",
+    "curr_bed_type",
+    "first_layer_print_sequence",
+    "first_layer_sequence_choice",
+    "other_layers_print_sequence",
+    "other_layers_sequence_choice",
+    "print_sequence",
+    "skirt_start_angle",
+    "spiral_mode",
+};
 
 static std::pair<std::string, std::string> extruder_variant_keys[]{
     {},                                                  // invalid
@@ -2992,6 +3007,8 @@ void TabPrint::build()
         optgroup = page->new_optgroup(L("Special mode"), L"param_special");
         optgroup->append_single_option_line("slicing_mode", "others_settings_special_mode#slicing-mode");
         optgroup->append_single_option_line("print_sequence", "others_settings_special_mode#print-sequence");
+        optgroup->append_single_option_line("by_object_sequence_order", "others_settings_special_mode#by-object-order");
+        optgroup->append_single_option_line("sequential_print_collision_override", "others_settings_special_mode#collision-override");
         optgroup->append_single_option_line("print_order", "others_settings_special_mode#intra-layer-order");
         optgroup->append_single_option_line("spiral_mode", "others_settings_special_mode#spiral-vase");
         optgroup->append_single_option_line("spiral_mode_smooth", "others_settings_special_mode#smooth-spiral");
@@ -3177,8 +3194,11 @@ void TabPrint::update()
     m_update_cnt--;
 
     if (m_update_cnt==0) {
-        if (m_active_page && !(m_active_page->title() == "Dependencies"))
+        if (m_active_page && !(m_active_page->title() == "Dependencies")) {
             toggle_options();
+            m_active_page->update_visibility(m_mode, true); // apply toggle_line visibility changes
+            m_parent->Layout();
+        }
         // update() could be called during undo/redo execution
         // Update of objectList can cause a crash in this case (because m_objects doesn't match ObjectList)
         if (m_type != Preset::TYPE_MODEL && !wxGetApp().plater()->inside_snapshot_capture())
@@ -3571,6 +3591,7 @@ void TabPrintPlate::build()
     optgroup->append_single_option_line("curr_bed_type");
     optgroup->append_single_option_line("skirt_start_angle");
     optgroup->append_single_option_line("print_sequence");
+    optgroup->append_single_option_line("by_object_sequence_order");
     optgroup->append_single_option_line("spiral_mode");
     optgroup->append_single_option_line("first_layer_sequence_choice");
     optgroup->append_single_option_line("other_layers_sequence_choice");
@@ -3630,6 +3651,8 @@ void TabPrintPlate::on_value_change(const std::string& opt_key, const boost::any
                 plate->set_other_layers_print_sequence({});
             if (k == "spiral_mode")
                 plate->set_spiral_vase_mode(false, true);
+            if (k == "by_object_sequence_order")
+                plate->config()->erase("by_object_sequence_order");
         }
         m_all_keys.erase(std::remove(m_all_keys.begin(), m_all_keys.end(), k), m_all_keys.end());
     }
@@ -3698,6 +3721,10 @@ void TabPrintPlate::on_value_change(const std::string& opt_key, const boost::any
             }
             if (k == "spiral_mode") {
                 plate->set_spiral_vase_mode(m_config->opt_bool("spiral_mode"), false);
+            }
+            if (k == "by_object_sequence_order") {
+                auto seq_order = m_config->opt_enum<ByObjectSequenceOrder>("by_object_sequence_order");
+                plate->config()->set_key_value("by_object_sequence_order", new ConfigOptionEnum<ByObjectSequenceOrder>(seq_order));
             }
         }
         m_all_keys = concat(m_all_keys, { k });
@@ -4896,7 +4923,10 @@ void TabPrinter::build_fff()
         optgroup->append_single_option_line("part_cooling_fan_min_pwm", "printer_basic_information_cooling_fan#minimum-non-zero-part-cooling-fan-speed");
 
         optgroup = page->new_optgroup(L("Extruder Clearance"), "param_extruder_clearance");
+        optgroup->append_single_option_line("extruder_clearance_type", "printer_basic_information_extruder_clearance#clearance-type");
         optgroup->append_single_option_line("extruder_clearance_radius", "printer_basic_information_extruder_clearance#radius");
+        optgroup->append_single_option_line("extruder_clearance_x", "printer_basic_information_extruder_clearance#clearance-x");
+        optgroup->append_single_option_line("extruder_clearance_y", "printer_basic_information_extruder_clearance#clearance-y");
         optgroup->append_single_option_line("extruder_clearance_height_to_rod", "printer_basic_information_extruder_clearance#height-to-rod");
         optgroup->append_single_option_line("extruder_clearance_height_to_lid", "printer_basic_information_extruder_clearance#height-to-lid");
 
@@ -5811,6 +5841,10 @@ void TabPrinter::toggle_options()
         bool gcf_is_marlin_firmware = m_config->option<ConfigOptionEnum<GCodeFlavor>>("gcode_flavor")->value == GCodeFlavor::gcfMarlinFirmware;
         toggle_line("enable_power_loss_recovery", is_BBL_printer || gcf_is_marlin_firmware);
 
+        const bool use_xy_clearance = m_config->opt_enum<ExtruderClearanceType>("extruder_clearance_type") == ExtruderClearanceType::XY;
+        toggle_line("extruder_clearance_radius", !use_xy_clearance);
+        toggle_line("extruder_clearance_x", use_xy_clearance);
+        toggle_line("extruder_clearance_y", use_xy_clearance);
         const bool support_parallel_printheads = printer_cfg.opt_bool("support_parallel_printheads");
         toggle_line("parallel_printheads_count", support_parallel_printheads);
     }

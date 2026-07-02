@@ -22,6 +22,10 @@ Polygon convex_hulll(const Polylines &polylines);
 // is not an empty set.
 bool convex_polygons_intersect(const Polygon &A, const Polygon &B);
 
+// Returns the Minkowski sum of a convex polygon with the rectangle [-dx, dx] x [-dy, dy].
+// Produces an exact asymmetric clearance zone; use instead of offset() when x and y clearances differ.
+Polygon minkowski_rect(const Polygon &poly, coord_t dx, coord_t dy);
+
 // Decompose source convex hull points into top / bottom chains with monotonically increasing x,
 // creating an implicit trapezoidal decomposition of the source convex polygon.
 // The source convex polygon has to be CCW oriented. O(n) time complexity.
