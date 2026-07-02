@@ -21,6 +21,7 @@ rebuild would otherwise drop them silently (this happened once, on 2026-06-28).
 | fff_print test framework | `feature/gcode-test-framework` | OrcaSlicer/OrcaSlicer#14426 |
 | First printable object name in filename | `fix/object-name-placeholder` | OrcaSlicer/OrcaSlicer#14497 |
 | Crash when rotating the prime tower | `fix/wipe-tower-rotate-crash` | OrcaSlicer/OrcaSlicer#14499 |
+| Stale instance ids in PartPlate scans | `fix/partplate-stale-instance-crash` | OrcaSlicer/OrcaSlicer#14523 |
 | Additional prepare time | `feature/additional_prepare_time` | none yet (WIP) |
 | Extruder clearance X/Y | `feature/extruder-clearance-rectangle` | none yet (WIP) |
 
@@ -42,6 +43,7 @@ git merge --no-ff feature/additional_prepare_time
 git merge --no-ff feature/gcode-test-framework
 git merge --no-ff fix/object-name-placeholder
 git merge --no-ff fix/wipe-tower-rotate-crash
+git merge --no-ff fix/partplate-stale-instance-crash
 git merge --no-ff feature/extruder-clearance-rectangle
 git push myfork main
 ```
