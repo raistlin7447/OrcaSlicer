@@ -20,6 +20,7 @@ rebuild would otherwise drop them silently (this happened once, on 2026-06-28).
 | Honor "Ignore" when layer height exceeds max | `fix/layer-height-ignore-honored` | OrcaSlicer/OrcaSlicer#14369 |
 | fff_print test framework | `feature/gcode-test-framework` | OrcaSlicer/OrcaSlicer#14426 |
 | Stale instance ids in PartPlate scans | `fix/partplate-stale-instance-crash` | OrcaSlicer/OrcaSlicer#14523 |
+| Calibration crash when cancelling model-load dialog | `fix/calibration-cancel-crash` | OrcaSlicer/OrcaSlicer#14546 |
 | Extruder clearance X/Y | `feature/extruder-clearance-rectangle` | none yet (WIP) |
 
 Open-PR branches join the integrated set automatically (they are in-flight work run
@@ -47,6 +48,7 @@ git merge --no-ff feature/ci-cross-platform-tests
 git merge --no-ff fix/layer-height-ignore-honored
 git merge --no-ff feature/gcode-test-framework
 git merge --no-ff fix/partplate-stale-instance-crash
+git merge --no-ff fix/calibration-cancel-crash
 git merge --no-ff feature/extruder-clearance-rectangle
 git push myfork main
 ```
