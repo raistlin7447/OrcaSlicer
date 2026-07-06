@@ -18,10 +18,9 @@ rebuild would otherwise drop them silently (this happened once, on 2026-06-28).
 | PA-pattern calibration over-retracts with absolute E | `fix/pa-pattern-absolute-e-reset` | OrcaSlicer/OrcaSlicer#14473 |
 | Unit tests on Windows/macOS | `feature/ci-cross-platform-tests` | OrcaSlicer/OrcaSlicer#14443 |
 | Honor "Ignore" when layer height exceeds max | `fix/layer-height-ignore-honored` | OrcaSlicer/OrcaSlicer#14369 |
-| fff_print test framework | `feature/gcode-test-framework` | OrcaSlicer/OrcaSlicer#14426 |
 | Stale instance ids in PartPlate scans | `fix/partplate-stale-instance-crash` | OrcaSlicer/OrcaSlicer#14523 |
 | Calibration crash when cancelling model-load dialog | `fix/calibration-cancel-crash` | OrcaSlicer/OrcaSlicer#14546 |
-| Multi-user slicing crash on shared temp dir | `fix/multiuser-tmpdir-crash` | OrcaSlicer/OrcaSlicer#14583 |
+| Isolate calibration temp paths per user | `fix/calib-temp-dir-per-user` | OrcaSlicer/OrcaSlicer#14619 |
 | Extruder clearance X/Y | `feature/extruder-clearance-rectangle` | none yet (WIP) |
 
 Open-PR branches join the integrated set automatically (they are in-flight work run
@@ -35,7 +34,12 @@ but is no longer merged into `main` or synced with `upstream/main`.
 `fix/object-name-placeholder` (OrcaSlicer/OrcaSlicer#14497) and
 `fix/wipe-tower-rotate-crash` (OrcaSlicer/OrcaSlicer#14499) both merged upstream on
 2026-07-02 and were dropped from this set; those features now come from
-`upstream/main` directly.
+`upstream/main` directly. `feature/gcode-test-framework`
+(OrcaSlicer/OrcaSlicer#14426) merged upstream on 2026-07-06 and was likewise dropped.
+
+`fix/multiuser-tmpdir-crash` (OrcaSlicer/OrcaSlicer#14583) was closed unmerged on
+2026-07-05, superseded by the per-user calibration temp-path fix
+`fix/calib-temp-dir-per-user` (OrcaSlicer/OrcaSlicer#14619), which replaces it in the set.
 
 ## Re-syncing onto latest upstream
 
@@ -47,10 +51,9 @@ git merge --no-ff fix/mmu-segmentation-zero-width
 git merge --no-ff fix/pa-pattern-absolute-e-reset
 git merge --no-ff feature/ci-cross-platform-tests
 git merge --no-ff fix/layer-height-ignore-honored
-git merge --no-ff feature/gcode-test-framework
 git merge --no-ff fix/partplate-stale-instance-crash
 git merge --no-ff fix/calibration-cancel-crash
-git merge --no-ff fix/multiuser-tmpdir-crash
+git merge --no-ff fix/calib-temp-dir-per-user
 git merge --no-ff feature/extruder-clearance-rectangle
 git push myfork main
 ```
