@@ -14,6 +14,7 @@ rebuild would otherwise drop them silently (this happened once, on 2026-06-28).
 | Feature | Branch | Upstream PR |
 |---------|--------|-------------|
 | Fork-only docs (this file + README banner) | `fork-docs` | n/a |
+| Layered guide to the test tree (docs) | `docs/test-suite-readmes` | OrcaSlicer/OrcaSlicer#14628 |
 | MMU slicing crash with line width 0 | `fix/mmu-segmentation-zero-width` | OrcaSlicer/OrcaSlicer#14455 |
 | PA-pattern calibration over-retracts with absolute E | `fix/pa-pattern-absolute-e-reset` | OrcaSlicer/OrcaSlicer#14473 |
 | Unit tests on Windows/macOS | `feature/ci-cross-platform-tests` | OrcaSlicer/OrcaSlicer#14443 |
@@ -47,6 +48,7 @@ but is no longer merged into `main` or synced with `upstream/main`.
 git fetch upstream
 git checkout -B main upstream/main
 git merge --no-ff fork-docs                          # FIRST: re-applies FORK.md + README banner
+git merge --no-ff docs/test-suite-readmes
 git merge --no-ff fix/mmu-segmentation-zero-width
 git merge --no-ff fix/pa-pattern-absolute-e-reset
 git merge --no-ff feature/ci-cross-platform-tests
