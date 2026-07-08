@@ -22,7 +22,7 @@ rebuild would otherwise drop them silently (this happened once, on 2026-06-28).
 | Stale instance ids in PartPlate scans | `fix/partplate-stale-instance-crash` | OrcaSlicer/OrcaSlicer#14523 |
 | Calibration crash when cancelling model-load dialog | `fix/calibration-cancel-crash` | OrcaSlicer/OrcaSlicer#14546 |
 | Isolate calibration temp paths per user | `fix/calib-temp-dir-per-user` | OrcaSlicer/OrcaSlicer#14619 |
-| `regex_replace()` filename-template function | `feat/regex-replace-filename-placeholder` | OrcaSlicer/OrcaSlicer#14650 |
+| Arachne beading interpolation out-of-bounds crash | `fix/arachne-interpolate-bounds` | OrcaSlicer/OrcaSlicer#14656 |
 | Extruder clearance X/Y | `feature/extruder-clearance-rectangle` | none yet (WIP) |
 
 Open-PR branches join the integrated set automatically (they are in-flight work run
@@ -38,6 +38,8 @@ but is no longer merged into `main` or synced with `upstream/main`.
 2026-07-02 and were dropped from this set; those features now come from
 `upstream/main` directly. `feature/gcode-test-framework`
 (OrcaSlicer/OrcaSlicer#14426) merged upstream on 2026-07-06 and was likewise dropped.
+`feat/regex-replace-filename-placeholder` (OrcaSlicer/OrcaSlicer#14650) merged upstream
+on 2026-07-08 and was dropped; that feature now comes from `upstream/main` directly.
 
 `fix/multiuser-tmpdir-crash` (OrcaSlicer/OrcaSlicer#14583) was closed unmerged on
 2026-07-05, superseded by the per-user calibration temp-path fix
@@ -57,7 +59,7 @@ git merge --no-ff fix/layer-height-ignore-honored
 git merge --no-ff fix/partplate-stale-instance-crash
 git merge --no-ff fix/calibration-cancel-crash
 git merge --no-ff fix/calib-temp-dir-per-user
-git merge --no-ff feat/regex-replace-filename-placeholder
+git merge --no-ff fix/arachne-interpolate-bounds
 git merge --no-ff feature/extruder-clearance-rectangle
 git push myfork main
 ```
