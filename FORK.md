@@ -17,12 +17,11 @@ rebuild would otherwise drop them silently (this happened once, on 2026-06-28).
 | Layered guide to the test tree (docs) | `docs/test-suite-readmes` | OrcaSlicer/OrcaSlicer#14628 |
 | MMU slicing crash with line width 0 | `fix/mmu-segmentation-zero-width` | OrcaSlicer/OrcaSlicer#14455 |
 | PA-pattern calibration over-retracts with absolute E | `fix/pa-pattern-absolute-e-reset` | OrcaSlicer/OrcaSlicer#14473 |
-| Unit tests on Windows/macOS | `feature/ci-cross-platform-tests` | OrcaSlicer/OrcaSlicer#14443 |
 | Honor "Ignore" when layer height exceeds max | `fix/layer-height-ignore-honored` | OrcaSlicer/OrcaSlicer#14369 |
 | Stale instance ids in PartPlate scans | `fix/partplate-stale-instance-crash` | OrcaSlicer/OrcaSlicer#14523 |
 | Calibration crash when cancelling model-load dialog | `fix/calibration-cancel-crash` | OrcaSlicer/OrcaSlicer#14546 |
-| Isolate calibration temp paths per user | `fix/calib-temp-dir-per-user` | OrcaSlicer/OrcaSlicer#14619 |
-| Arachne beading interpolation out-of-bounds crash | `fix/arachne-interpolate-bounds` | OrcaSlicer/OrcaSlicer#14656 |
+| Tool-ordering max layer height out-of-bounds read | `fix/toolordering-max-layer-height-oob` | OrcaSlicer/OrcaSlicer#14665 |
+| Cover placeholder built-in function boundary (tests) | `test/placeholder-expression-functions` | OrcaSlicer/OrcaSlicer#14667 |
 | Extruder clearance X/Y | `feature/extruder-clearance-rectangle` | none yet (WIP) |
 
 Open-PR branches join the integrated set automatically (they are in-flight work run
@@ -40,10 +39,14 @@ but is no longer merged into `main` or synced with `upstream/main`.
 (OrcaSlicer/OrcaSlicer#14426) merged upstream on 2026-07-06 and was likewise dropped.
 `feat/regex-replace-filename-placeholder` (OrcaSlicer/OrcaSlicer#14650) merged upstream
 on 2026-07-08 and was dropped; that feature now comes from `upstream/main` directly.
+`feature/ci-cross-platform-tests` (OrcaSlicer/OrcaSlicer#14443),
+`fix/calib-temp-dir-per-user` (OrcaSlicer/OrcaSlicer#14619) and
+`fix/arachne-interpolate-bounds` (OrcaSlicer/OrcaSlicer#14656) all merged upstream on
+2026-07-08 and were dropped; those features now come from `upstream/main` directly.
 
 `fix/multiuser-tmpdir-crash` (OrcaSlicer/OrcaSlicer#14583) was closed unmerged on
 2026-07-05, superseded by the per-user calibration temp-path fix
-`fix/calib-temp-dir-per-user` (OrcaSlicer/OrcaSlicer#14619), which replaces it in the set.
+`fix/calib-temp-dir-per-user` (OrcaSlicer/OrcaSlicer#14619, since merged upstream).
 
 ## Re-syncing onto latest upstream
 
@@ -54,12 +57,11 @@ git merge --no-ff fork-docs                          # FIRST: re-applies FORK.md
 git merge --no-ff docs/test-suite-readmes
 git merge --no-ff fix/mmu-segmentation-zero-width
 git merge --no-ff fix/pa-pattern-absolute-e-reset
-git merge --no-ff feature/ci-cross-platform-tests
 git merge --no-ff fix/layer-height-ignore-honored
 git merge --no-ff fix/partplate-stale-instance-crash
 git merge --no-ff fix/calibration-cancel-crash
-git merge --no-ff fix/calib-temp-dir-per-user
-git merge --no-ff fix/arachne-interpolate-bounds
+git merge --no-ff fix/toolordering-max-layer-height-oob
+git merge --no-ff test/placeholder-expression-functions
 git merge --no-ff feature/extruder-clearance-rectangle
 git push myfork main
 ```
