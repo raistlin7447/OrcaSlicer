@@ -167,7 +167,7 @@ jobs:
       test-dir: build/arm64/tests
   publish_test_results:
     name: Publish Test Results
-    needs: [unit_tests_linux_x86_64, unit_tests_linux_aarch64, unit_tests_windows_x64, unit_tests_windows_arm64, unit_tests_macos_arm64]
+    needs: [unit_tests_linux_x86_64, unit_tests_linux_aarch64, unit_tests_windows_x64, unit_tests_windows_arm64, unit_tests_macos_arm64, flatpak]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -271,6 +271,8 @@ jobs:
         cache: false
         arch: ${{ matrix.variant.arch }}
         upload-artifact: false
+        # Kept so the post-build step can run the unit suite via `--run`.
+        keep-build-dirs: true
     - name: Upload artifacts Flatpak
       uses: actions/upload-artifact@v7
       with:
@@ -286,3 +288,40 @@ jobs:
         asset_name: OrcaSlicer-Linux-flatpak_nightly${{ env.nightly_suffix }}_${{ matrix.variant.arch }}.flatpak
         asset_content_type: application/octet-stream
         max_releases: 1 # optional, if there are more releases than this matching the asset_name, the oldest ones are going to be deleted
+    # The GNOME SDK's _GLIBCXX_ASSERTIONS (bounds-checked STL, unique to this leg)
+    # turns silent out-of-bounds reads into failures. Runs after upload so a
+    # failure never discards the bundle; `--run` bind-mounts the build dir at
+    # /run/build/OrcaSlicer, so TEST_DATA_DIR and the hardened CXXFLAGS carry over.
+    - name: Run unit tests (bounds-checked sandbox)
+      shell: bash
+      run: |
+        flatpak-builder --run --state-dir .flatpak-builder flatpak_app \
+          scripts/flatpak/com.orcaslicer.OrcaSlicer.yml \
+          bash -c '
+            set -e
+            export PATH=/usr/lib/sdk/llvm21/bin:$PATH
+            cd /run/build/OrcaSlicer
+            cmake . -B build_flatpak -DBUILD_TESTS=ON
+            cmake --build build_flatpak -j"$(nproc)" --target \
+              libslic3r_tests fff_print_tests sla_print_tests libnest2d_tests slic3rutils_tests
+            scripts/run_unit_tests.sh build_flatpak/tests'
+    - name: Collect Flatpak test results
+      if: always()
+      shell: bash
+      run: |
+        d=$(ls -d .flatpak-builder/build/OrcaSlicer-* 2>/dev/null | tail -1 || true)
+        [ -n "$d" ] && [ -f "$d/ctest_results.xml" ] && cp "$d/ctest_results.xml" ctest_results.xml || true
+    - name: Upload Flatpak test results artifact
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        # test-results-* is aggregated by publish_test_results.
+        name: test-results-${{ github.sha }}-flatpak-${{ matrix.variant.arch }}
+        path: ctest_results.xml
+        retention-days: 5
+        if-no-files-found: warn
+    # Drop the kept build trees so they don't bloat the cached .flatpak-builder.
+    - name: Trim kept build dirs before caching
+      if: always()
+      shell: bash
+      run: rm -rf .flatpak-builder/build

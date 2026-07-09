@@ -375,6 +375,10 @@ modules:
       - type: dir
         path: ../../localization
         dest: localization
+      # For build_all.yml's post-build unit-test step; not built by the app.
+      - type: dir
+        path: ../../tests
+        dest: tests
 
       - type: file
         path: ../../CMakeLists.txt
@@ -384,6 +388,9 @@ modules:
         path: ../../version.inc
       - type: file
         path: ../run_gettext.sh
+        dest: scripts
+      - type: file
+        path: ../run_unit_tests.sh
         dest: scripts
 
       # AppData metainfo for GNOME Software & Co.
