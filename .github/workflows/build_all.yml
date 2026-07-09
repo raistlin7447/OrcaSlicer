@@ -295,7 +295,13 @@ jobs:
     - name: Run unit tests (bounds-checked sandbox)
       shell: bash
       run: |
-        flatpak-builder --run --state-dir .flatpak-builder flatpak_app \
+        # No build dir means the app module was served from cache (no source
+        # change), so there is nothing new to test.
+        if ! ls -d .flatpak-builder/build/OrcaSlicer-* >/dev/null 2>&1; then
+          echo "OrcaSlicer module cached; skipping unit tests."
+          exit 0
+        fi
+        flatpak-builder --run flatpak_app \
           scripts/flatpak/com.orcaslicer.OrcaSlicer.yml \
           bash -c '
             set -e
