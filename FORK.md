@@ -20,8 +20,6 @@ rebuild would otherwise drop them silently (this happened once, on 2026-06-28).
 | Honor "Ignore" when layer height exceeds max | `fix/layer-height-ignore-honored` | OrcaSlicer/OrcaSlicer#14369 |
 | Stale instance ids in PartPlate scans | `fix/partplate-stale-instance-crash` | OrcaSlicer/OrcaSlicer#14523 |
 | Calibration crash when cancelling model-load dialog | `fix/calibration-cancel-crash` | OrcaSlicer/OrcaSlicer#14546 |
-| Tool-ordering max layer height out-of-bounds read | `fix/toolordering-max-layer-height-oob` | OrcaSlicer/OrcaSlicer#14665 |
-| Cover placeholder built-in function boundary (tests) | `test/placeholder-expression-functions` | OrcaSlicer/OrcaSlicer#14667 |
 | Extruder clearance X/Y | `feature/extruder-clearance-rectangle` | none yet (WIP) |
 
 Open-PR branches join the integrated set automatically (they are in-flight work run
@@ -44,6 +42,12 @@ on 2026-07-08 and was dropped; that feature now comes from `upstream/main` direc
 `fix/arachne-interpolate-bounds` (OrcaSlicer/OrcaSlicer#14656) all merged upstream on
 2026-07-08 and were dropped; those features now come from `upstream/main` directly.
 
+`fix/toolordering-max-layer-height-oob` (OrcaSlicer/OrcaSlicer#14665) and
+`test/placeholder-expression-functions` (OrcaSlicer/OrcaSlicer#14667) merged upstream
+on 2026-07-09 and were dropped; those features now come from `upstream/main` directly.
+`fix/extrude-support-dangling-static-lambda` (OrcaSlicer/OrcaSlicer#14677) also merged
+upstream on 2026-07-09 (it was a standalone local branch, never in this set).
+
 `fix/multiuser-tmpdir-crash` (OrcaSlicer/OrcaSlicer#14583) was closed unmerged on
 2026-07-05, superseded by the per-user calibration temp-path fix
 `fix/calib-temp-dir-per-user` (OrcaSlicer/OrcaSlicer#14619, since merged upstream).
@@ -60,8 +64,6 @@ git merge --no-ff fix/pa-pattern-absolute-e-reset
 git merge --no-ff fix/layer-height-ignore-honored
 git merge --no-ff fix/partplate-stale-instance-crash
 git merge --no-ff fix/calibration-cancel-crash
-git merge --no-ff fix/toolordering-max-layer-height-oob
-git merge --no-ff test/placeholder-expression-functions
 git merge --no-ff feature/extruder-clearance-rectangle
 git push myfork main
 ```
