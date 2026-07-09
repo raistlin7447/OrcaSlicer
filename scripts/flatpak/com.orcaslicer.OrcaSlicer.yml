@@ -339,6 +339,23 @@ modules:
       - ./scripts/run_gettext.sh
       - cmake --build build_flatpak --target install -j$FLATPAK_BUILDER_N_JOBS
 
+    # Runs only under the action's run-tests (build_all.yml), in the build
+    # sandbox where the GNOME SDK's _GLIBCXX_ASSERTIONS bounds-checked STL turns
+    # silent out-of-bounds reads into failures. Kept non-fatal so a test failure
+    # never aborts the build (the bundle still ships); build_all.yml reads the
+    # recorded exit code afterward and fails the job. libslic3r is already built,
+    # so only the test sources compile; nothing installs to /app.
+    test-commands:
+      - |
+        set +e
+        rc=0
+        cmake . -B build_flatpak -DBUILD_TESTS=ON || rc=1
+        cmake --build build_flatpak -j"${FLATPAK_BUILDER_N_JOBS:-$(nproc)}" --target \
+          libslic3r_tests fff_print_tests sla_print_tests libnest2d_tests slic3rutils_tests || rc=1
+        scripts/run_unit_tests.sh build_flatpak/tests || rc=1
+        echo "$rc" > orca_test_rc
+        exit 0
+
     cleanup:
       - /include
 

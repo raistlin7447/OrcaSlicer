@@ -271,7 +271,10 @@ jobs:
         cache: false
         arch: ${{ matrix.variant.arch }}
         upload-artifact: false
-        # Kept so the post-build step can run the unit suite via `--run`.
+        # run-tests fires the module's test-commands (the unit suite) in the
+        # build sandbox; keep-build-dirs preserves the recorded result + JUnit
+        # for the steps below.
+        run-tests: true
         keep-build-dirs: true
     - name: Upload artifacts Flatpak
       uses: actions/upload-artifact@v7
@@ -288,29 +291,6 @@ jobs:
         asset_name: OrcaSlicer-Linux-flatpak_nightly${{ env.nightly_suffix }}_${{ matrix.variant.arch }}.flatpak
         asset_content_type: application/octet-stream
         max_releases: 1 # optional, if there are more releases than this matching the asset_name, the oldest ones are going to be deleted
-    # The GNOME SDK's _GLIBCXX_ASSERTIONS (bounds-checked STL, unique to this leg)
-    # turns silent out-of-bounds reads into failures. Runs after upload so a
-    # failure never discards the bundle; `--run` bind-mounts the build dir at
-    # /run/build/OrcaSlicer, so TEST_DATA_DIR and the hardened CXXFLAGS carry over.
-    - name: Run unit tests (bounds-checked sandbox)
-      shell: bash
-      run: |
-        # No build dir means the app module was served from cache (no source
-        # change), so there is nothing new to test.
-        if ! ls -d .flatpak-builder/build/OrcaSlicer-* >/dev/null 2>&1; then
-          echo "OrcaSlicer module cached; skipping unit tests."
-          exit 0
-        fi
-        flatpak-builder --run flatpak_app \
-          scripts/flatpak/com.orcaslicer.OrcaSlicer.yml \
-          bash -c '
-            set -e
-            export PATH=/usr/lib/sdk/llvm21/bin:$PATH
-            cd /run/build/OrcaSlicer
-            cmake . -B build_flatpak -DBUILD_TESTS=ON
-            cmake --build build_flatpak -j"$(nproc)" --target \
-              libslic3r_tests fff_print_tests sla_print_tests libnest2d_tests slic3rutils_tests
-            scripts/run_unit_tests.sh build_flatpak/tests'
     - name: Collect Flatpak test results
       if: always()
       shell: bash
@@ -326,6 +306,17 @@ jobs:
         path: ctest_results.xml
         retention-days: 5
         if-no-files-found: warn
+    # Fail the job on a test failure, after the bundle has been uploaded/deployed.
+    # A missing build dir means the module was cached (no source change), so there
+    # is nothing new to test.
+    - name: Check unit test result
+      shell: bash
+      run: |
+        d=$(ls -d .flatpak-builder/build/OrcaSlicer-* 2>/dev/null | tail -1 || true)
+        if [ -z "$d" ]; then echo "OrcaSlicer module cached; no tests ran."; exit 0; fi
+        rc=$(cat "$d/orca_test_rc" 2>/dev/null || echo 1)
+        echo "unit test exit code: $rc"
+        [ "$rc" = "0" ]
     # Drop the kept build trees so they don't bloat the cached .flatpak-builder.
     - name: Trim kept build dirs before caching
       if: always()
