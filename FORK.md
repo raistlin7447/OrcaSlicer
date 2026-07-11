@@ -18,8 +18,10 @@ rebuild would otherwise drop them silently (this happened once, on 2026-06-28).
 | MMU slicing crash with line width 0 | `fix/mmu-segmentation-zero-width` | OrcaSlicer/OrcaSlicer#14455 |
 | PA-pattern calibration over-retracts with absolute E | `fix/pa-pattern-absolute-e-reset` | OrcaSlicer/OrcaSlicer#14473 |
 | Honor "Ignore" when layer height exceeds max | `fix/layer-height-ignore-honored` | OrcaSlicer/OrcaSlicer#14369 |
-| Stale instance ids in PartPlate scans | `fix/partplate-stale-instance-crash` | OrcaSlicer/OrcaSlicer#14523 |
 | Calibration crash when cancelling model-load dialog | `fix/calibration-cancel-crash` | OrcaSlicer/OrcaSlicer#14546 |
+| Guard filament_printable read against a short per-filament array | `fix/filament-printable-oob` | OrcaSlicer/OrcaSlicer#14695 |
+| Run the unit-test suite under the flatpak bounds-checked STL (CI) | `feature/ci-flatpak-tests-separate-job` | OrcaSlicer/OrcaSlicer#14709 |
+| One declared cardinality per option (config array sizing refactor) | `refactor/config-cardinality` | OrcaSlicer/OrcaSlicer#14726 |
 | Extruder clearance X/Y | `feature/extruder-clearance-rectangle` | none yet (WIP) |
 
 Open-PR branches join the integrated set automatically (they are in-flight work run
@@ -48,6 +50,10 @@ on 2026-07-09 and were dropped; those features now come from `upstream/main` dir
 `fix/extrude-support-dangling-static-lambda` (OrcaSlicer/OrcaSlicer#14677) also merged
 upstream on 2026-07-09 (it was a standalone local branch, never in this set).
 
+`fix/partplate-stale-instance-crash` (OrcaSlicer/OrcaSlicer#14523) merged upstream on
+2026-07-11 and was dropped from this set; that fix now comes from `upstream/main`
+directly.
+
 `fix/multiuser-tmpdir-crash` (OrcaSlicer/OrcaSlicer#14583) was closed unmerged on
 2026-07-05, superseded by the per-user calibration temp-path fix
 `fix/calib-temp-dir-per-user` (OrcaSlicer/OrcaSlicer#14619, since merged upstream).
@@ -62,8 +68,10 @@ git merge --no-ff docs/test-suite-readmes
 git merge --no-ff fix/mmu-segmentation-zero-width
 git merge --no-ff fix/pa-pattern-absolute-e-reset
 git merge --no-ff fix/layer-height-ignore-honored
-git merge --no-ff fix/partplate-stale-instance-crash
 git merge --no-ff fix/calibration-cancel-crash
+git merge --no-ff fix/filament-printable-oob
+git merge --no-ff feature/ci-flatpak-tests-separate-job
+git merge --no-ff refactor/config-cardinality
 git merge --no-ff feature/extruder-clearance-rectangle
 git push myfork main
 ```
