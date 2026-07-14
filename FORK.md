@@ -20,6 +20,7 @@ rebuild would otherwise drop them silently (this happened once, on 2026-06-28).
 | Honor "Ignore" when layer height exceeds max | `fix/layer-height-ignore-honored` | OrcaSlicer/OrcaSlicer#14369 |
 | Calibration crash when cancelling model-load dialog | `fix/calibration-cancel-crash` | OrcaSlicer/OrcaSlicer#14546 |
 | Guard filament_printable read against a short per-filament array | `fix/filament-printable-oob` | OrcaSlicer/OrcaSlicer#14695 |
+| Startup crash on macOS when a printer has a print host set | `fix/webview-wx-handler-double-add` | OrcaSlicer/OrcaSlicer#14747 |
 | Run the unit-test suite under the flatpak bounds-checked STL (CI) | `feature/ci-flatpak-tests-separate-job` | OrcaSlicer/OrcaSlicer#14709 |
 | One declared cardinality per option (config array sizing refactor) | `refactor/config-cardinality` | OrcaSlicer/OrcaSlicer#14726 |
 | Extruder clearance X/Y | `feature/extruder-clearance-rectangle` | none yet (WIP) |
@@ -70,6 +71,7 @@ git merge --no-ff fix/pa-pattern-absolute-e-reset
 git merge --no-ff fix/layer-height-ignore-honored
 git merge --no-ff fix/calibration-cancel-crash
 git merge --no-ff fix/filament-printable-oob
+git merge --no-ff fix/webview-wx-handler-double-add
 git merge --no-ff feature/ci-flatpak-tests-separate-job
 git merge --no-ff refactor/config-cardinality
 git merge --no-ff feature/extruder-clearance-rectangle
