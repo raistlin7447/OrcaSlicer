@@ -131,7 +131,7 @@ jobs:
           mkdir -p ${{ github.workspace }}/deps/build/${{ inputs.arch }}
 
       - name: Free disk space
-        if: runner.os == 'macOS' && !inputs.macos-combine-only && !vars.SELF_HOSTED
+        if: runner.os == 'macOS' && !vars.SELF_HOSTED
         run: |
           df -hI /dev/disk3s1s1
           sudo find /Applications -maxdepth 1 -type d -name "Xcode_*.app" ! -name "Xcode_15.4.app" -exec rm -rf {} +
@@ -210,6 +210,8 @@ jobs:
         run: |
           # Load the `retry` helper (retries flaky commands such as `hdiutil create`).
           source ${{ github.workspace }}/scripts/retry.sh
+          # hdiutil create has intermittently failed here with ENOSPC.
+          show_disk() { echo "== free disk ($1)"; df -hI /dev/disk3s1s1 || true; }
           CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
           echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode --output $CERTIFICATE_PATH
@@ -263,9 +265,11 @@ jobs:
           rm -rf ${{ github.workspace }}/build/universal/OrcaSlicer_dmg/*
           cp -R ${{ github.workspace }}/build/universal/OrcaSlicer/OrcaSlicer.app ${{ github.workspace }}/build/universal/OrcaSlicer_dmg/
           ln -sfn /Applications ${{ github.workspace }}/build/universal/OrcaSlicer_dmg/Applications
+          show_disk "before main DMG"
           retry hdiutil create -volname "OrcaSlicer" -srcfolder ${{ github.workspace }}/build/universal/OrcaSlicer_dmg -ov -format UDZO OrcaSlicer_Mac_universal_${{ env.ver }}.dmg
           codesign --deep --force --verbose --options runtime --timestamp --entitlements "$ENTITLEMENTS" --sign "$CERTIFICATE_ID" OrcaSlicer_Mac_universal_${{ env.ver }}.dmg
-          
+          show_disk "after main DMG"
+
           # Create separate OrcaSlicer_profile_validator DMG if the app exists
           if [ -f "${{ github.workspace }}/build/universal/OrcaSlicer/OrcaSlicer_profile_validator.app/Contents/MacOS/OrcaSlicer_profile_validator" ]; then
             mkdir -p ${{ github.workspace }}/build/universal/OrcaSlicer_profile_validator_dmg
@@ -274,6 +278,7 @@ jobs:
             ln -sfn /Applications ${{ github.workspace }}/build/universal/OrcaSlicer_profile_validator_dmg/Applications
             retry hdiutil create -volname "OrcaSlicer Profile Validator" -srcfolder ${{ github.workspace }}/build/universal/OrcaSlicer_profile_validator_dmg -ov -format UDZO OrcaSlicer_profile_validator_Mac_universal_${{ env.ver }}.dmg
             codesign --deep --force --verbose --options runtime --timestamp --entitlements "$ENTITLEMENTS" --sign "$CERTIFICATE_ID" OrcaSlicer_profile_validator_Mac_universal_${{ env.ver }}.dmg
+            show_disk "after validator DMG"
           fi
           
           # Notarize main DMG
@@ -292,12 +297,16 @@ jobs:
         run: |
           # Load the `retry` helper (retries flaky commands such as `hdiutil create`).
           source ${{ github.workspace }}/scripts/retry.sh
+          # hdiutil create has intermittently failed here with ENOSPC.
+          show_disk() { echo "== free disk ($1)"; df -hI /dev/disk3s1s1 || true; }
           mkdir -p ${{ github.workspace }}/build/universal/OrcaSlicer_dmg
           rm -rf ${{ github.workspace }}/build/universal/OrcaSlicer_dmg/*
           cp -R ${{ github.workspace }}/build/universal/OrcaSlicer/OrcaSlicer.app ${{ github.workspace }}/build/universal/OrcaSlicer_dmg/
           ln -sfn /Applications ${{ github.workspace }}/build/universal/OrcaSlicer_dmg/Applications
+          show_disk "before main DMG"
           retry hdiutil create -volname "OrcaSlicer" -srcfolder ${{ github.workspace }}/build/universal/OrcaSlicer_dmg -ov -format UDZO OrcaSlicer_Mac_universal_${{ env.ver }}.dmg
-          
+          show_disk "after main DMG"
+
           # Create separate OrcaSlicer_profile_validator DMG if the app exists
           if [ -f "${{ github.workspace }}/build/universal/OrcaSlicer/OrcaSlicer_profile_validator.app/Contents/MacOS/OrcaSlicer_profile_validator" ]; then
             mkdir -p ${{ github.workspace }}/build/universal/OrcaSlicer_profile_validator_dmg
@@ -305,6 +314,7 @@ jobs:
             cp -R ${{ github.workspace }}/build/universal/OrcaSlicer/OrcaSlicer_profile_validator.app ${{ github.workspace }}/build/universal/OrcaSlicer_profile_validator_dmg/
             ln -sfn /Applications ${{ github.workspace }}/build/universal/OrcaSlicer_profile_validator_dmg/Applications
             retry hdiutil create -volname "OrcaSlicer Profile Validator" -srcfolder ${{ github.workspace }}/build/universal/OrcaSlicer_profile_validator_dmg -ov -format UDZO OrcaSlicer_profile_validator_Mac_universal_${{ env.ver }}.dmg
+            show_disk "after validator DMG"
           fi
 
       # Delete the per-arch bundles only after signing/DMG creation succeeded, so a
