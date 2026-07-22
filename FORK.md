@@ -16,18 +16,36 @@ rebuild would otherwise drop them silently (this happened once, on 2026-06-28).
 | Fork-only docs (this file + README banner) | `fork-docs` | n/a |
 | Layered guide to the test tree (docs) | `docs/test-suite-readmes` | OrcaSlicer/OrcaSlicer#14628 |
 | MMU slicing crash with line width 0 | `fix/mmu-segmentation-zero-width` | OrcaSlicer/OrcaSlicer#14455 |
-| PA-pattern calibration over-retracts with absolute E | `fix/pa-pattern-absolute-e-reset` | OrcaSlicer/OrcaSlicer#14473 |
 | Honor "Ignore" when layer height exceeds max | `fix/layer-height-ignore-honored` | OrcaSlicer/OrcaSlicer#14369 |
-| Calibration crash when cancelling model-load dialog | `fix/calibration-cancel-crash` | OrcaSlicer/OrcaSlicer#14546 |
-| Guard filament_printable read against a short per-filament array | `fix/filament-printable-oob` | OrcaSlicer/OrcaSlicer#14695 |
 | Startup crash on macOS when a printer has a print host set | `fix/webview-wx-handler-double-add` | OrcaSlicer/OrcaSlicer#14747 |
 | Run the unit-test suite under the flatpak bounds-checked STL (CI) | `feature/ci-flatpak-tests-separate-job` | OrcaSlicer/OrcaSlicer#14709 |
+| Stop littering the working directory with test debug files | `chore/test-debug-artifacts` | OrcaSlicer/OrcaSlicer#14785 |
+| Guard H2C per-filament array reads against short config arrays | `fix/h2c-oob-filament-arrays` | OrcaSlicer/OrcaSlicer#14789 |
+| MSIX execution alias + web link associations (Store package) | `feat/msix-execution-alias` | OrcaSlicer/OrcaSlicer#14799 |
+| Resolve relative input paths given on the command line | `fix/cli-relative-input-paths` | OrcaSlicer/OrcaSlicer#14803 |
+| Klipper/Moonraker upload errors show a raw Python traceback | `fix/moonraker-error-traceback` | OrcaSlicer/OrcaSlicer#14841 |
+| Replace the disabled convex_hull_2d test | `test/reenable-3mf-convex-hull` | OrcaSlicer/OrcaSlicer#14892 |
+| Error dialog caret points at the character it blames | `fix/error-dialog-caret-alignment` | OrcaSlicer/OrcaSlicer#14886 |
+| Infill rotation template crashes on raft prints | `fix/infill-rotation-raft` | OrcaSlicer/OrcaSlicer#14894 |
 | One declared cardinality per option (config array sizing refactor) | `refactor/config-cardinality` | OrcaSlicer/OrcaSlicer#14726 |
-| Extruder clearance X/Y | `feature/extruder-clearance-rectangle` | none yet (WIP) |
+| Extruder clearance X/Y — _temporarily excluded, upstream conflict_ | `feature/extruder-clearance-rectangle` | none yet (WIP) |
 
 Open-PR branches join the integrated set automatically (they are in-flight work run
 on the daily driver) and drop off once their PR merges upstream. The `none yet`
 branch is a local WIP feature.
+
+`feature/extruder-clearance-rectangle` conflicts with the current `upstream/main` on
+`src/libslic3r/PrintConfig.cpp` and `.hpp` (rerere cannot auto-resolve it), so it is
+temporarily left out of `main` pending manual conflict resolution on the branch.
+Re-add it (last) in the recipe below once resolved.
+
+`fix/pa-pattern-absolute-e-reset` (OrcaSlicer/OrcaSlicer#14473),
+`fix/calibration-cancel-crash` (OrcaSlicer/OrcaSlicer#14546),
+`fix/filament-printable-oob` (OrcaSlicer/OrcaSlicer#14695),
+`fix/bbl-dev-mode-dialog-spam` (OrcaSlicer/OrcaSlicer#14774) and
+`fix/oom-new-handler` (OrcaSlicer/OrcaSlicer#14807) all merged upstream on
+2026-07-20/21 and were dropped from this set; those fixes now come from
+`upstream/main` directly.
 
 `feature/additional_prepare_time` was retired from this set on 2026-07-02, superseded
 upstream by OrcaSlicer/OrcaSlicer#14520. The branch is kept on `myfork` for reference
@@ -67,14 +85,21 @@ git checkout -B main upstream/main
 git merge --no-ff fork-docs                          # FIRST: re-applies FORK.md + README banner
 git merge --no-ff docs/test-suite-readmes
 git merge --no-ff fix/mmu-segmentation-zero-width
-git merge --no-ff fix/pa-pattern-absolute-e-reset
 git merge --no-ff fix/layer-height-ignore-honored
-git merge --no-ff fix/calibration-cancel-crash
-git merge --no-ff fix/filament-printable-oob
 git merge --no-ff fix/webview-wx-handler-double-add
 git merge --no-ff feature/ci-flatpak-tests-separate-job
+git merge --no-ff chore/test-debug-artifacts
+git merge --no-ff fix/h2c-oob-filament-arrays
+git merge --no-ff feat/msix-execution-alias
+git merge --no-ff fix/cli-relative-input-paths
+git merge --no-ff fix/moonraker-error-traceback
+git merge --no-ff test/reenable-3mf-convex-hull
+git merge --no-ff fix/error-dialog-caret-alignment
+git merge --no-ff fix/infill-rotation-raft
 git merge --no-ff refactor/config-cardinality
-git merge --no-ff feature/extruder-clearance-rectangle
+# feature/extruder-clearance-rectangle is temporarily excluded: it conflicts with
+# upstream/main on PrintConfig.cpp/.hpp. Re-add it here (last) once resolved:
+#   git merge --no-ff feature/extruder-clearance-rectangle
 git push myfork main
 ```
 
@@ -95,6 +120,16 @@ clearance code.
    `fork-docs`; the merge re-applies it while keeping upstream's README body. Keep
    the blockquote at the top, take upstream's changes below it. Usually no conflict,
    and git rerere auto-resolves it when there is one.
+
+2. `src/libslic3r/GCode/ToolOrdering.cpp`, merging `fix/h2c-oob-filament-arrays`
+   after `feature/ci-flatpak-tests-separate-job`. The CI branch carries an older copy
+   of the same guard so its bounds-checked test leg is green; take the
+   `fix/h2c-oob-filament-arrays` side, which supersedes it.
+
+3. `tests/libslic3r/test_3mf.cpp`, merging `test/reenable-3mf-convex-hull` after
+   `chore/test-debug-artifacts`. The debug-artifacts branch edits the disabled
+   `2D convex hull of sinking object` scenario that the test branch deletes; take the
+   `test/reenable-3mf-convex-hull` side.
 
 ## Keeping feature branches current
 
