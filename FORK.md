@@ -14,10 +14,7 @@ rebuild would otherwise drop them silently (this happened once, on 2026-06-28).
 | Feature | Branch | Upstream PR |
 |---------|--------|-------------|
 | Fork-only docs (this file + README banner) | `fork-docs` | n/a |
-| Layered guide to the test tree (docs) | `docs/test-suite-readmes` | OrcaSlicer/OrcaSlicer#14628 |
-| MMU slicing crash with line width 0 | `fix/mmu-segmentation-zero-width` | OrcaSlicer/OrcaSlicer#14455 |
 | Honor "Ignore" when layer height exceeds max | `fix/layer-height-ignore-honored` | OrcaSlicer/OrcaSlicer#14369 |
-| Startup crash on macOS when a printer has a print host set | `fix/webview-wx-handler-double-add` | OrcaSlicer/OrcaSlicer#14747 |
 | Run the unit-test suite under the flatpak bounds-checked STL (CI) | `feature/ci-flatpak-tests-separate-job` | OrcaSlicer/OrcaSlicer#14709 |
 | Stop littering the working directory with test debug files | `chore/test-debug-artifacts` | OrcaSlicer/OrcaSlicer#14785 |
 | Guard H2C per-filament array reads against short config arrays | `fix/h2c-oob-filament-arrays` | OrcaSlicer/OrcaSlicer#14789 |
@@ -26,7 +23,7 @@ rebuild would otherwise drop them silently (this happened once, on 2026-06-28).
 | Klipper/Moonraker upload errors show a raw Python traceback | `fix/moonraker-error-traceback` | OrcaSlicer/OrcaSlicer#14841 |
 | Replace the disabled convex_hull_2d test | `test/reenable-3mf-convex-hull` | OrcaSlicer/OrcaSlicer#14892 |
 | Error dialog caret points at the character it blames | `fix/error-dialog-caret-alignment` | OrcaSlicer/OrcaSlicer#14886 |
-| Infill rotation template crashes on raft prints | `fix/infill-rotation-raft` | OrcaSlicer/OrcaSlicer#14894 |
+| Custom G-code reserved-keyword validation uses the right list | `fix/custom-gcode-reserved-keyword-validation` | OrcaSlicer/OrcaSlicer#14908 |
 | One declared cardinality per option (config array sizing refactor) | `refactor/config-cardinality` | OrcaSlicer/OrcaSlicer#14726 |
 | Extruder clearance X/Y — _temporarily excluded, upstream conflict_ | `feature/extruder-clearance-rectangle` | none yet (WIP) |
 
@@ -38,6 +35,13 @@ branch is a local WIP feature.
 `src/libslic3r/PrintConfig.cpp` and `.hpp` (rerere cannot auto-resolve it), so it is
 temporarily left out of `main` pending manual conflict resolution on the branch.
 Re-add it (last) in the recipe below once resolved.
+
+`docs/test-suite-readmes` (OrcaSlicer/OrcaSlicer#14628),
+`fix/mmu-segmentation-zero-width` (OrcaSlicer/OrcaSlicer#14455),
+`fix/webview-wx-handler-double-add` (OrcaSlicer/OrcaSlicer#14747) and
+`fix/infill-rotation-raft` (OrcaSlicer/OrcaSlicer#14894) all merged upstream on
+2026-07-22/23 and were dropped from this set; those changes now come from
+`upstream/main` directly.
 
 `fix/pa-pattern-absolute-e-reset` (OrcaSlicer/OrcaSlicer#14473),
 `fix/calibration-cancel-crash` (OrcaSlicer/OrcaSlicer#14546),
@@ -83,10 +87,7 @@ directly.
 git fetch upstream
 git checkout -B main upstream/main
 git merge --no-ff fork-docs                          # FIRST: re-applies FORK.md + README banner
-git merge --no-ff docs/test-suite-readmes
-git merge --no-ff fix/mmu-segmentation-zero-width
 git merge --no-ff fix/layer-height-ignore-honored
-git merge --no-ff fix/webview-wx-handler-double-add
 git merge --no-ff feature/ci-flatpak-tests-separate-job
 git merge --no-ff chore/test-debug-artifacts
 git merge --no-ff fix/h2c-oob-filament-arrays
@@ -95,7 +96,7 @@ git merge --no-ff fix/cli-relative-input-paths
 git merge --no-ff fix/moonraker-error-traceback
 git merge --no-ff test/reenable-3mf-convex-hull
 git merge --no-ff fix/error-dialog-caret-alignment
-git merge --no-ff fix/infill-rotation-raft
+git merge --no-ff fix/custom-gcode-reserved-keyword-validation
 git merge --no-ff refactor/config-cardinality
 # feature/extruder-clearance-rectangle is temporarily excluded: it conflicts with
 # upstream/main on PrintConfig.cpp/.hpp. Re-add it here (last) once resolved:
