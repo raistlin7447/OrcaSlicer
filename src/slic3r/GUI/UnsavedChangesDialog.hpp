@@ -285,6 +285,8 @@ protected:
     wxStaticText*           m_info_line     { nullptr };
     wxScrolledWindow*       m_scrolledWindow{ nullptr };
 
+    int                     m_first_value_width { 0 };  // label column width; grows to fit the widest label
+
     bool                    m_has_long_strings  { false };
     int                     m_save_btn_id       { wxID_ANY };
     int                     m_move_btn_id       { wxID_ANY };
@@ -340,7 +342,7 @@ public:
     UnsavedChangesDialog(Preset::Type type, PresetCollection* dependent_presets, const std::string& new_selected_preset, bool no_transfer = false);
     // show unsaved changes for all another cases
     UnsavedChangesDialog(const wxString& caption, const wxString& header, const std::string& app_config_key, int act_buttons);
-    UnsavedChangesDialog(const wxString &caption, const wxString &header, DynamicConfig *config, int from, int to, bool left_to_right, NozzleVolumeType nozzle);
+    UnsavedChangesDialog(const wxString &caption, const wxString &header, Preset::Type type, DynamicConfig *config, int from, int to, bool left_to_right, NozzleVolumeType nozzle);
     ~UnsavedChangesDialog() override = default;
 
     int ShowModal() override;
