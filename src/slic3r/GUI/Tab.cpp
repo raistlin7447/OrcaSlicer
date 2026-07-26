@@ -7877,7 +7877,7 @@ wxSizer* TabPrinter::create_bed_shape_widget(wxWindow* parent)
 
     {
         Search::OptionsSearcher& searcher = wxGetApp().sidebar().get_searcher();
-        const Search::GroupAndCategory& gc = searcher.get_group_and_category("printable_area");
+        const Search::GroupAndCategory gc = searcher.get_group_and_category("printable_area", m_type);
         searcher.add_key("bed_custom_texture", m_type, gc.group, gc.category);
         searcher.add_key("bed_custom_model", m_type, gc.group, gc.category);
     }

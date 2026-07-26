@@ -411,6 +411,7 @@ public:
 
 	DynamicPrintConfig*	get_config() { return m_config; }
     PresetCollection *  get_presets() { return m_presets; }
+    const std::vector<PageShp>& pages() const { return m_pages; }  // pages/optgroups/lines are in display order
     TabPresetComboBox *  get_combo_box() { return m_presets_choice; }
 
 	virtual void    on_value_change(const std::string& opt_key, const boost::any& value);

@@ -2,6 +2,7 @@
 #define slic3r_UnsavedChangesDialog_hpp_
 
 #include <wx/dataview.h>
+#include <climits>
 #include <map>
 #include <vector>
 
@@ -260,6 +261,9 @@ struct PresetItem
     wxString     option_name;
     wxString     old_value;
     wxString     new_value;
+    int          order{ INT_MAX };  // tab page render order (build_tab_order_map); rows on no page sort last
+    int          extruder_id{ 0 };  // real extruder for a per-extruder page row, else 0; groups the extruder sections
+    bool         has_icon{ false }; // the value clips, so the row shows a compare icon
 };
 
 
@@ -286,6 +290,8 @@ protected:
     wxScrolledWindow*       m_scrolledWindow{ nullptr };
 
     int                     m_first_value_width { 0 };  // label column width; grows to fit the widest label
+    int                     m_content_width     { 0 };  // full row width; category headers ellipsize against it
+    std::map<std::string, int> m_tab_order;             // opt_key -> settings-tab render order; built once per dialog
 
     bool                    m_has_long_strings  { false };
     int                     m_save_btn_id       { wxID_ANY };
@@ -350,7 +356,7 @@ public:
     void        build(Preset::Type type, PresetCollection *dependent_presets, const std::string &new_selected_preset, const wxString &header = "");
     void update(Preset::Type type, PresetCollection* dependent_presets, const std::string& new_selected_preset, const wxString& header);
     void update_list(SyncExtruderParams *params = nullptr);
-    std::string subreplace(std::string resource_str, std::string sub_str, std::string new_str);
+    bool value_clips(const wxString &value) const;  // true if the value wraps or is wider than the value column
     void        update_tree(Preset::Type type, PresetCollection *presets);
     void        update_tree(Preset::Type type, DynamicConfig *config, int from, int to);
     void show_info_line(Action action, std::string preset_name = "");
@@ -431,6 +437,7 @@ class DiffPresetDialog : public DPIDialog
 
     Preset::Type            m_view_type         { Preset::TYPE_INVALID };
     PrinterTechnology       m_pr_technology;
+    std::map<std::string, int> m_tab_order;             // opt_key -> settings-tab render order; rebuilt when (re)shown
     std::unique_ptr<PresetBundle>   m_preset_bundle_left;
     std::unique_ptr<PresetBundle>   m_preset_bundle_right;
 
