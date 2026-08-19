@@ -793,6 +793,30 @@ static SparseInfillShape sparse_infill_shape(const Print &print)
     return shape;
 }
 
+TEST_CASE("Lightning infill slices the same model the same way twice", "[Fill][Regression]")
+{
+    // Slicing twice in one process catches a generator that carries state from one slice to the
+    // next, or whose result depends on how the parallel layer fill interleaves.
+    auto shape = [] {
+        Print print;
+        Slic3r::Test::init_and_process_print({Slic3r::Test::cube(20)}, print,
+                                            {{"sparse_infill_pattern", "lightning"},
+                                             {"sparse_infill_density", "50%"},
+                                             {"layer_height", 0.2}});
+        return sparse_infill_shape(print);
+    };
+
+    const SparseInfillShape first  = shape();
+    const SparseInfillShape second = shape();
+
+    REQUIRE(first.path_count > 0);
+    REQUIRE(second.path_count == first.path_count);
+    REQUIRE(second.point_count == first.point_count);
+    REQUIRE(second.sharp_turns == first.sharp_turns);
+    // No tolerance: the same extrusions in the same order add up to the very same number.
+    REQUIRE_THAT(second.length, Catch::Matchers::WithinAbs(first.length, 0.));
+}
+
 TEST_CASE("Lightning infill rounds the turns of its branches with the smooth factor", "[Fill]")
 {
     auto shape_for = [](const std::string &smooth_factor) {
