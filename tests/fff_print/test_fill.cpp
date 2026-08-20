@@ -996,11 +996,12 @@ TEST_CASE("Smoothing multiline lightning infill keeps its outlines connected", "
 // TEMPORARY probe, not for merge. Fails on purpose so ctest --output-on-failure prints it.
 TEST_CASE("PROBE tree support determinism", "[Support][Probe]")
 {
-    auto shape = [] {
+    auto shape = [](const char *style, Slic3r::Test::TestMesh m) {
         Print print;
-        Slic3r::Test::init_and_process_print({Slic3r::Test::mesh(Slic3r::Test::TestMesh::overhang)}, print,
+        Slic3r::Test::init_and_process_print({Slic3r::Test::mesh(m)}, print,
                                             {{"enable_support", 1},
                                              {"support_type", "tree(auto)"},
+                                             {"support_style", style},
                                              {"layer_height", 0.2}});
         size_t paths = 0, points = 0;
         double length = 0.;
@@ -1022,13 +1023,17 @@ TEST_CASE("PROBE tree support determinism", "[Support][Probe]")
                         length += (pts[i] - pts[i - 1]).head<2>().cast<double>().norm();
                 }
             }
-        fprintf(stderr, "TREEPROBE layers=%zu paths=%zu points=%zu length=%.0f\n",
-                print.objects().front()->support_layers().size(), paths, points, length);
+        fprintf(stderr, "  TREEDATA %-12s layers=%zu paths=%zu points=%zu length=%.0f\n",
+                style, print.objects().front()->support_layers().size(), paths, points, length);
         return std::make_tuple(paths, points, length);
     };
 
-    const auto a = shape();
-    const auto b = shape();
-    fprintf(stderr, "TREEPROBE repeats=%s\n", (a == b) ? "IDENTICAL" : "DIFFERED");
+    for (const char *style : {"tree_slim", "tree_strong", "tree_hybrid", "organic"})
+        for (auto m : {Slic3r::Test::TestMesh::overhang, Slic3r::Test::TestMesh::ipadstand}) {
+            const auto a = shape(style, m);
+            const auto b = shape(style, m);
+            fprintf(stderr, "TREEPROBE style=%-12s mesh=%d repeats=%s\n",
+                    style, int(m), (a == b) ? "IDENTICAL" : "DIFFERED");
+        }
     FAIL("probe only");
 }
