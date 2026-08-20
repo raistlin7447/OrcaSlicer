@@ -1,5 +1,7 @@
 #include <catch2/catch_all.hpp>
 
+#include <cstdio>
+
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -1012,4 +1014,75 @@ TEST_CASE("Smoothing multiline lightning infill keeps its outlines connected", "
     // The outlines are still rounded.
     REQUIRE(smooth.point_count > sharp.point_count);
     REQUIRE(smooth.sharp_turns < sharp.sharp_turns);
+}
+
+// TEMPORARY probe, not for merge. Fails on purpose so ctest --output-on-failure prints it.
+TEST_CASE("PROBE lightning platform divergence", "[Fill][Probe]")
+{
+    struct Reading {
+        size_t layers { 0 }, with_sparse { 0 }, sparse_surfaces { 0 }, paths { 0 }, points { 0 };
+        double length { 0. };
+        std::string per_layer;
+    };
+
+    auto probe = [](const std::string &smooth_factor) {
+        Print print;
+        Slic3r::Test::init_and_process_print({Slic3r::Test::cube(20)}, print,
+                                            {{"sparse_infill_pattern", "lightning"},
+                                             {"sparse_infill_density", "50%"},
+                                             {"fill_multiline", 2},
+                                             {"sparse_infill_smooth_factor", smooth_factor},
+                                             {"layer_height", 0.2}});
+        Reading r;
+        for (const Layer *layer : print.objects().front()->layers()) {
+            size_t layer_paths = 0;
+            auto   account = [&](const ExtrusionPath &path) {
+                if (!sparse_role(path.role()))
+                    return;
+                ++layer_paths;
+                const Points3 &pts = path.polyline.points;
+                r.points += pts.size();
+                for (size_t i = 1; i < pts.size(); ++i)
+                    r.length += (pts[i] - pts[i - 1]).head<2>().cast<double>().norm();
+            };
+            for (const LayerRegion *region : layer->regions()) {
+                for (const Surface &surface : region->fill_surfaces.surfaces)
+                    if (surface.surface_type == stInternal)
+                        ++r.sparse_surfaces;
+                for (const ExtrusionEntity *entity : region->fills.flatten().entities) {
+                    if (auto *path = dynamic_cast<const ExtrusionPath *>(entity))
+                        account(*path);
+                    else if (auto *multi = dynamic_cast<const ExtrusionMultiPath *>(entity))
+                        for (const ExtrusionPath &p : multi->paths) account(p);
+                    else if (auto *loop = dynamic_cast<const ExtrusionLoop *>(entity))
+                        for (const ExtrusionPath &p : loop->paths) account(p);
+                }
+            }
+            if (layer_paths > 0) {
+                ++r.with_sparse;
+                r.per_layer += std::to_string(r.layers) + ":" + std::to_string(layer_paths) + " ";
+            }
+            r.paths += layer_paths;
+            ++r.layers;
+        }
+        return r;
+    };
+    auto report = [](const char *label, const Reading &r) {
+        fprintf(stderr, "PROBE %-7s layers=%zu with_sparse=%zu sparse_surfaces=%zu paths=%zu points=%zu length=%.0f\n",
+                label, r.layers, r.with_sparse, r.sparse_surfaces, r.paths, r.points, r.length);
+        fprintf(stderr, "PROBE %-7s per_layer %s\n", label, r.per_layer.c_str());
+    };
+
+    // Sliced twice, so this also shows whether the generator now repeats on this platform.
+    const Reading sharp_a = probe("0%");
+    const Reading sharp_b = probe("0%");
+    const Reading smooth  = probe("100%");
+    report("sharp-a", sharp_a);
+    report("sharp-b", sharp_b);
+    report("smooth", smooth);
+    fprintf(stderr, "PROBE repeats=%s  smooth_minus_sharp=%+d  sizeof(coord_t)=%zu SCALING_FACTOR=%g\n",
+            (sharp_a.paths == sharp_b.paths && sharp_a.points == sharp_b.points &&
+             sharp_a.length == sharp_b.length) ? "IDENTICAL" : "DIFFERED",
+            int(smooth.paths) - int(sharp_a.paths), sizeof(coord_t), SCALING_FACTOR);
+    FAIL("probe only, always fails so the numbers reach the log");
 }
