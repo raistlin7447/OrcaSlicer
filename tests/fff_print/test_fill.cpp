@@ -1,5 +1,8 @@
 #include <catch2/catch_all.hpp>
 
+#include <cstdio>
+#include <tuple>
+
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -988,4 +991,44 @@ TEST_CASE("Smoothing multiline lightning infill keeps its outlines connected", "
     // The outlines are still rounded.
     REQUIRE(smooth.point_count > sharp.point_count);
     REQUIRE(smooth.sharp_turns < sharp.sharp_turns);
+}
+
+// TEMPORARY probe, not for merge. Fails on purpose so ctest --output-on-failure prints it.
+TEST_CASE("PROBE tree support determinism", "[Support][Probe]")
+{
+    auto shape = [] {
+        Print print;
+        Slic3r::Test::init_and_process_print({Slic3r::Test::mesh(Slic3r::Test::TestMesh::overhang)}, print,
+                                            {{"enable_support", 1},
+                                             {"support_type", "tree(auto)"},
+                                             {"layer_height", 0.2}});
+        size_t paths = 0, points = 0;
+        double length = 0.;
+        for (const Layer *layer : print.objects().front()->layers())
+            for (const SupportLayer *slayer : print.objects().front()->support_layers()) {
+                (void)layer; (void)slayer; break;
+            }
+        for (const SupportLayer *slayer : print.objects().front()->support_layers())
+            for (const ExtrusionEntity *entity : slayer->support_fills.flatten().entities) {
+                std::vector<const ExtrusionPath *> ps;
+                if (auto *p = dynamic_cast<const ExtrusionPath *>(entity)) ps.push_back(p);
+                else if (auto *m = dynamic_cast<const ExtrusionMultiPath *>(entity)) for (const ExtrusionPath &q : m->paths) ps.push_back(&q);
+                else if (auto *l = dynamic_cast<const ExtrusionLoop *>(entity)) for (const ExtrusionPath &q : l->paths) ps.push_back(&q);
+                for (const ExtrusionPath *p : ps) {
+                    ++paths;
+                    const Points3 &pts = p->polyline.points;
+                    points += pts.size();
+                    for (size_t i = 1; i < pts.size(); ++i)
+                        length += (pts[i] - pts[i - 1]).head<2>().cast<double>().norm();
+                }
+            }
+        fprintf(stderr, "TREEPROBE layers=%zu paths=%zu points=%zu length=%.0f\n",
+                print.objects().front()->support_layers().size(), paths, points, length);
+        return std::make_tuple(paths, points, length);
+    };
+
+    const auto a = shape();
+    const auto b = shape();
+    fprintf(stderr, "TREEPROBE repeats=%s\n", (a == b) ? "IDENTICAL" : "DIFFERED");
+    FAIL("probe only");
 }
