@@ -1,3 +1,5 @@
+> **Personal fork.** I use this to develop and test features intended for upstream [OrcaSlicer](https://github.com/OrcaSlicer/OrcaSlicer). The `main` branch carries works-in-progress and PRs submitted upstream but not yet merged. See [FORK.md](FORK.md).
+
 <div align="center">
 
 <picture>
