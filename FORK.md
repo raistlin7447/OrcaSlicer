@@ -14,16 +14,17 @@ rebuild would otherwise drop them silently (this happened once, on 2026-06-28).
 | Feature | Branch | Upstream PR |
 |---------|--------|-------------|
 | Fork-only docs (this file + README banner) | `fork-docs` | n/a |
-| Honor "Ignore" when layer height exceeds max | `fix/layer-height-ignore-honored` | OrcaSlicer/OrcaSlicer#14369 |
-| Run the unit-test suite under the flatpak bounds-checked STL (CI) | `feature/ci-flatpak-tests-separate-job` | OrcaSlicer/OrcaSlicer#14709 |
-| Stop littering the working directory with test debug files | `chore/test-debug-artifacts` | OrcaSlicer/OrcaSlicer#14785 |
-| Guard H2C per-filament array reads against short config arrays | `fix/h2c-oob-filament-arrays` | OrcaSlicer/OrcaSlicer#14789 |
-| MSIX execution alias + web link associations (Store package) | `feat/msix-execution-alias` | OrcaSlicer/OrcaSlicer#14799 |
-| Resolve relative input paths given on the command line | `fix/cli-relative-input-paths` | OrcaSlicer/OrcaSlicer#14803 |
+| Restore Ctrl+drag panning on macOS | `fix/macos-ctrl-drag-pan` | OrcaSlicer/OrcaSlicer#15312 |
+| Restore compile parallelism for clang-cl (VS generator) | `fix/clang-cl-msbuild-parallel` | OrcaSlicer/OrcaSlicer#15324 |
+| Bounds-check the toolchange flush-volume and HRC lookups | `fix/toolchange-hrc-array-oob` | OrcaSlicer/OrcaSlicer#15289 |
+| H2D extruder sync on the Motion ability page | `fix/sync-motion-ability-stride` | OrcaSlicer/OrcaSlicer#14931 |
+| Slice the same model to the same lightning infill every time | `fix/lightning-infill-determinism` | OrcaSlicer/OrcaSlicer#15311 |
 | Klipper/Moonraker upload errors show a raw Python traceback | `fix/moonraker-error-traceback` | OrcaSlicer/OrcaSlicer#14841 |
-| Replace the disabled convex_hull_2d test | `test/reenable-3mf-convex-hull` | OrcaSlicer/OrcaSlicer#14892 |
-| Error dialog caret points at the character it blames | `fix/error-dialog-caret-alignment` | OrcaSlicer/OrcaSlicer#14886 |
+| Guard H2C per-filament array reads against short config arrays | `fix/h2c-oob-filament-arrays` | OrcaSlicer/OrcaSlicer#14789 |
+| Extruder-sync dialog shows the wrong parameter name | `fix/sync-dialog-param-labels` | OrcaSlicer/OrcaSlicer#14939 |
+| Resolve relative input paths given on the command line | `fix/cli-relative-input-paths` | OrcaSlicer/OrcaSlicer#14803 |
 | Custom G-code reserved-keyword validation uses the right list | `fix/custom-gcode-reserved-keyword-validation` | OrcaSlicer/OrcaSlicer#14908 |
+| Run the unit-test suite under the flatpak bounds-checked STL (CI) | `feature/ci-flatpak-tests-separate-job` | OrcaSlicer/OrcaSlicer#14709 |
 | One declared cardinality per option (config array sizing refactor) | `refactor/config-cardinality` | OrcaSlicer/OrcaSlicer#14726 |
 | Extruder clearance X/Y — _temporarily excluded, upstream conflict_ | `feature/extruder-clearance-rectangle` | none yet (WIP) |
 
@@ -35,6 +36,14 @@ branch is a local WIP feature.
 `src/libslic3r/PrintConfig.cpp` and `.hpp` (rerere cannot auto-resolve it), so it is
 temporarily left out of `main` pending manual conflict resolution on the branch.
 Re-add it (last) in the recipe below once resolved.
+
+`fix/layer-height-ignore-honored` (OrcaSlicer/OrcaSlicer#14369),
+`chore/test-debug-artifacts` (OrcaSlicer/OrcaSlicer#14785),
+`feat/msix-execution-alias` (OrcaSlicer/OrcaSlicer#14799),
+`fix/error-dialog-caret-alignment` (OrcaSlicer/OrcaSlicer#14886) and
+`test/reenable-3mf-convex-hull` (OrcaSlicer/OrcaSlicer#14892) all merged upstream and
+were dropped from this set on 2026-08-21; those changes now come from `upstream/main`
+directly.
 
 `docs/test-suite-readmes` (OrcaSlicer/OrcaSlicer#14628),
 `fix/mmu-segmentation-zero-width` (OrcaSlicer/OrcaSlicer#14455),
@@ -87,16 +96,17 @@ directly.
 git fetch upstream
 git checkout -B main upstream/main
 git merge --no-ff fork-docs                          # FIRST: re-applies FORK.md + README banner
-git merge --no-ff fix/layer-height-ignore-honored
-git merge --no-ff feature/ci-flatpak-tests-separate-job
-git merge --no-ff chore/test-debug-artifacts
-git merge --no-ff fix/h2c-oob-filament-arrays
-git merge --no-ff feat/msix-execution-alias
-git merge --no-ff fix/cli-relative-input-paths
+git merge --no-ff fix/macos-ctrl-drag-pan
+git merge --no-ff fix/clang-cl-msbuild-parallel
+git merge --no-ff fix/toolchange-hrc-array-oob
+git merge --no-ff fix/sync-motion-ability-stride
+git merge --no-ff fix/lightning-infill-determinism
 git merge --no-ff fix/moonraker-error-traceback
-git merge --no-ff test/reenable-3mf-convex-hull
-git merge --no-ff fix/error-dialog-caret-alignment
+git merge --no-ff fix/h2c-oob-filament-arrays
+git merge --no-ff fix/sync-dialog-param-labels
+git merge --no-ff fix/cli-relative-input-paths
 git merge --no-ff fix/custom-gcode-reserved-keyword-validation
+git merge --no-ff feature/ci-flatpak-tests-separate-job
 git merge --no-ff refactor/config-cardinality
 # feature/extruder-clearance-rectangle is temporarily excluded: it conflicts with
 # upstream/main on PrintConfig.cpp/.hpp. Re-add it here (last) once resolved:
@@ -122,15 +132,11 @@ clearance code.
    the blockquote at the top, take upstream's changes below it. Usually no conflict,
    and git rerere auto-resolves it when there is one.
 
-2. `src/libslic3r/GCode/ToolOrdering.cpp`, merging `fix/h2c-oob-filament-arrays`
-   after `feature/ci-flatpak-tests-separate-job`. The CI branch carries an older copy
-   of the same guard so its bounds-checked test leg is green; take the
-   `fix/h2c-oob-filament-arrays` side, which supersedes it.
+2. `src/libslic3r/GCode/ToolOrdering.cpp`, between `fix/h2c-oob-filament-arrays` and
+   `feature/ci-flatpak-tests-separate-job`. The CI branch carries an older copy of the
+   same guard so its bounds-checked test leg is green; take the
+   `fix/h2c-oob-filament-arrays` side whichever order they merge in.
 
-3. `tests/libslic3r/test_3mf.cpp`, merging `test/reenable-3mf-convex-hull` after
-   `chore/test-debug-artifacts`. The debug-artifacts branch edits the disabled
-   `2D convex hull of sinking object` scenario that the test branch deletes; take the
-   `test/reenable-3mf-convex-hull` side.
 
 ## Keeping feature branches current
 
