@@ -147,7 +147,11 @@ message(STATUS "OrcaSlicer deps debug build: ${DEP_DEBUG}")
 find_package(Git REQUIRED)
 
 # The default command line for patching. Only works for newer
-set(PATCH_CMD ${GIT_EXECUTABLE} apply --verbose --ignore-space-change --whitespace=fix)
+#
+# Patches go through apply_patch.cmake so they are skipped when already applied
+# and so git cannot rewrite line endings while patching.
+set(PATCH_CMD ${CMAKE_COMMAND} -DGIT_EXECUTABLE=${GIT_EXECUTABLE}
+              -P ${CMAKE_CURRENT_LIST_DIR}/apply_patch.cmake --)
 
 if (NOT _is_multi AND NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
