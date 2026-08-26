@@ -306,3 +306,36 @@ jobs:
         asset_name: OrcaSlicer-Linux-flatpak_nightly${{ env.nightly_suffix }}_${{ matrix.variant.arch }}.flatpak
         asset_content_type: application/octet-stream
         max_releases: 1 # optional, if there are more releases than this matching the asset_name, the oldest ones are going to be deleted
+
+  prune_flatpak_caches:
+    name: Prune flatpak-builder caches
+    needs: flatpak
+    # actions/cache entries are immutable, so the per-commit key leaves another
+    # ~3 GB entry behind on every push while only the newest is ever restored.
+    # Only pushes save a cache, so only pushes create the surplus, and a fork PR
+    # gets a read-only token that could not delete anyway.
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && !vars.SELF_HOSTED }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      # Housekeeping: a failure here must not fail an otherwise good build.
+      - name: Delete superseded flatpak-builder caches
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          # The run above just wrote one; the spare covers a restore still in flight.
+          KEEP: '2'
+        run: |
+          # ref= confines this to the branch that just built, so belt-printer and
+          # every other branch keep their own entries. key= matches on prefix.
+          for arch in x86_64 aarch64; do
+            filter="ref=${{ github.ref }}&key=flatpak-builder-$arch-"
+            gh api "repos/$REPO/actions/caches?$filter&sort=created_at&direction=desc&per_page=100" --jq '.actions_caches[] | [.id, .key, (.size_in_bytes / 1000000 | floor)] | map(tostring) | join(" ")' |
+              tail -n +$((KEEP + 1)) |
+              while read -r id key size; do
+                gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null &&
+                  echo "deleted $key ($size MB)"
+              done
+          done
