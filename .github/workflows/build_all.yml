@@ -288,7 +288,14 @@ jobs:
       with:
         bundle: OrcaSlicer-Linux-flatpak_${{ env.ver }}_${{ matrix.variant.arch }}.flatpak
         manifest-path: scripts/flatpak/com.orcaslicer.OrcaSlicer.yml
-        cache: false
+        # flatpak-builder only gets --ccache when this is true: the action adds
+        # that flag on the cache input, not on restore-cache/save-cache. Leaving
+        # it false meant the .flatpak-builder/ccache restored above was downloaded
+        # and then ignored. Restore and save stay off so the steps above keep
+        # ownership of the cache and PRs read it without writing it.
+        cache: true
+        restore-cache: false
+        save-cache: false
         arch: ${{ matrix.variant.arch }}
         upload-artifact: false
     - name: Upload artifacts Flatpak
