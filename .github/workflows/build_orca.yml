@@ -393,9 +393,11 @@ jobs:
         #   WindowsSdkDir: 'C:\Program Files (x86)\Windows Kits\10\'
         #   WindowsSDKVersion: '10.0.26100.0\'
         # "tests" builds the unit tests too; the unit_tests_windows_* jobs run them.
+        # "clang" selects the ClangCL toolset on both arches; the windows-11-arm
+        # image carries VC.Llvm.ClangToolset just as the x64 image does.
         run: |
           $arch = "${{ inputs.arch }}"
-          if ($arch -eq "arm64") { .\build_release_vs.bat slicer arm64 tests } else { .\build_release_vs.bat slicer clang tests }
+          if ($arch -eq "arm64") { .\build_release_vs.bat slicer arm64 clang tests } else { .\build_release_vs.bat slicer clang tests }
         shell: pwsh
 
       - name: Build system preset cache (Windows)
