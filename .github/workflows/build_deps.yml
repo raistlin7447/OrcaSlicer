@@ -136,7 +136,7 @@ jobs:
             }
             $arch = "${{ inputs.arch }}"
             if ($arch -eq "arm64") {
-              .\build_release_vs.bat deps arm64
+              .\build_release_vs.bat deps arm64 -x
               .\build_release_vs.bat pack arm64
             } else {
               .\build_release_vs.bat deps
