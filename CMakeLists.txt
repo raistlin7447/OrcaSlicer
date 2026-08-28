@@ -563,6 +563,28 @@ if ((NOT MSVC OR IS_CLANG_CL) AND ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR 
     # On GCC and Clang, no return from a non-void function is a warning only. Here, we make it an error.
     add_compile_options(-Werror=return-type)
 
+    # Warning categories that are at zero. Add a name once its category is cleared.
+    set(werror_categories
+
+        comment
+        pessimizing-move
+        unused-value
+    )
+
+    # Same, for names GCC does not have. It rejects an unknown -Werror= argument
+    # outright, so these cannot go in the list above.
+    if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
+        list(APPEND werror_categories
+
+            undefined-bool-conversion
+            unused-lambda-capture
+        )
+    endif ()
+
+    foreach (category IN LISTS werror_categories)
+        add_compile_options(-Werror=${category})
+    endforeach ()
+
     # Since some portions of code are just commented out or put under conditional compilation, there are
     # a bunch of warning related to unused functions and variables. Suppress those warnings to not pollute
     # compilers diagnostics output with warnings we not going to look at
