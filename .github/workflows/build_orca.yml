@@ -161,7 +161,7 @@ jobs:
           fi
           {
             echo "CCACHE_DIR=$RUNNER_TEMP/ccache"
-            echo "CCACHE_MAXSIZE=1500M"
+            echo "CCACHE_MAXSIZE=${{ inputs.pch-off && '300M' || '700M' }}"
             echo "CCACHE_SLOPPINESS=pch_defines,time_macros,include_file_mtime,include_file_ctime"
             echo "CCACHE_NOHASHDIR=1"
             echo "CCACHE_DEPEND=1"
@@ -196,6 +196,7 @@ jobs:
           CMAKE_C_COMPILER_LAUNCHER: ccache
           CMAKE_CXX_COMPILER_LAUNCHER: ccache
           ORCA_EXTRA_CMAKE_ARGS: ${{ inputs.pch-off && '-DSLIC3R_PCH=OFF' || '' }}
+          ORCA_EXTRA_BUILD_ARGS: ${{ inputs.pch-off && '-- -k 0' || '' }}
         run: |
           ./build_release_macos.sh -s -n -x ${{ !vars.SELF_HOSTED && '-j 3' || '' }} -a ${{ inputs.arch }} -t 10.15 ${{ inputs.arch == 'arm64' && '-T' || '' }}
 

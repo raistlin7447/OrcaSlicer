@@ -333,7 +333,7 @@ jobs:
         ln -s "$RUNNER_TEMP/ccache" .flatpak-builder/ccache
         du -sh "$RUNNER_TEMP/ccache"
         m=scripts/flatpak/com.orcaslicer.OrcaSlicer.yml
-        sed -i "/name: OrcaSlicer/{n;s|buildsystem: simple|buildsystem: simple\n    build-options:\n      env:\n        git_commit_hash: \"$git_commit_hash\"\n        CMAKE_C_COMPILER_LAUNCHER: ccache\n        CMAKE_CXX_COMPILER_LAUNCHER: ccache\n        CCACHE_MAXSIZE: 2G\n        CCACHE_SLOPPINESS: pch_defines,time_macros,include_file_mtime,include_file_ctime\n        CCACHE_NOHASHDIR: \"1\"\n        CCACHE_DEPEND: \"1\"\n        CCACHE_BASEDIR: /run/build/OrcaSlicer|}" "$m"
+        sed -i "/name: OrcaSlicer/{n;s|buildsystem: simple|buildsystem: simple\n    build-options:\n      env:\n        git_commit_hash: \"$git_commit_hash\"\n        CMAKE_C_COMPILER_LAUNCHER: ccache\n        CMAKE_CXX_COMPILER_LAUNCHER: ccache\n        CCACHE_MAXSIZE: ${{ inputs.pch-off && '900M' || '1300M' }}\n        CCACHE_SLOPPINESS: pch_defines,time_macros,include_file_mtime,include_file_ctime\n        CCACHE_NOHASHDIR: \"1\"\n        CCACHE_DEPEND: \"1\"\n        CCACHE_BASEDIR: /run/build/OrcaSlicer|}" "$m"
         # Per-run statistics: zero them first, print them after the build.
         sed -i '/name: OrcaSlicer$/,/^    build-commands:$/ s|^    build-commands:$|    build-commands:\n      - ccache -z|' "$m"
         sed -i 's|^      - cmake --build build_flatpak --target install -j\$FLATPAK_BUILDER_N_JOBS$|&\n      - ccache -sv|' "$m"

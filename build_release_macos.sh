@@ -267,7 +267,7 @@ function build_slicer() {
                     -DCMAKE_IGNORE_PREFIX_PATH="${CMAKE_IGNORE_PREFIX_PATH}" \
                     ${CMAKE_POLICY_COMPAT}
             fi
-            cmake --build . --config "$BUILD_CONFIG" --target "$SLICER_BUILD_TARGET"
+            cmake --build . --config "$BUILD_CONFIG" --target "$SLICER_BUILD_TARGET" ${ORCA_EXTRA_BUILD_ARGS}
         )
 
         # -T also runs the tests; ORCA_TESTS_BUILD_ONLY=1 builds them without
