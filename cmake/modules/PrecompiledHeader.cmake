@@ -255,6 +255,12 @@ else ()
 function(add_precompiled_header _target _input)
     message(STATUS "Adding precompiled header ${_input} to target ${_target}.")
     target_precompile_headers(${_target} PRIVATE ${_input})
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        # Clang records the headers' mtimes in the .pch, so a fresh checkout
+        # yields a different file and every TU that uses it misses the
+        # compiler cache. CMake does not pass this itself.
+        target_compile_options(${_target} PRIVATE -Xclang -fno-pch-timestamp)
+    endif ()
 
     get_target_property(_sources ${_target} SOURCES)
     list(FILTER _sources INCLUDE REGEX ".*\\.mm?")
