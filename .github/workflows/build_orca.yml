@@ -161,9 +161,10 @@ jobs:
           fi
           {
             echo "CCACHE_DIR=$RUNNER_TEMP/ccache"
-            echo "CCACHE_MAXSIZE=1G"
+            echo "CCACHE_MAXSIZE=1500M"
             echo "CCACHE_SLOPPINESS=pch_defines,time_macros,include_file_mtime,include_file_ctime"
             echo "CCACHE_NOHASHDIR=1"
+            echo "CCACHE_DEPEND=1"
             echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
             echo "ccache_key=ccache-$RUNNER_OS-${{ inputs.arch || 'x86_64' }}-pch${{ inputs.pch-off && 'off' || 'on' }}"
           } >> "$GITHUB_ENV"
