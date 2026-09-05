@@ -161,7 +161,7 @@ jobs:
           fi
           {
             echo "CCACHE_DIR=$RUNNER_TEMP/ccache"
-            echo "CCACHE_MAXSIZE=${{ inputs.pch-off && '300M' || '700M' }}"
+            echo "CCACHE_MAXSIZE=${{ inputs.pch-off && '400M' || '1200M' }}"
             echo "CCACHE_SLOPPINESS=pch_defines,time_macros,include_file_mtime,include_file_ctime"
             echo "CCACHE_NOHASHDIR=1"
             echo "CCACHE_DEPEND=1"
