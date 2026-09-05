@@ -19,6 +19,7 @@
 #include <wx/dcgraph.h>
 #include <wx/graphics.h>
 #include <wx/display.h>
+#include <wx/tooltip.h>
 #include <miniz.h>
 #include <algorithm>
 #include <optional>

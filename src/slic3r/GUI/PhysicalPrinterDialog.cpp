@@ -15,6 +15,7 @@
 #include <wx/choicdlg.h>
 #include <wx/statbox.h>
 #include <wx/wupdlock.h>
+#include <wx/tooltip.h>
 
 #include "libslic3r/libslic3r.h"
 #include "libslic3r/PrintConfig.hpp"

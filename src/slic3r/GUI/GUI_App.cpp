@@ -45,6 +45,7 @@
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/beast/core/detail/base64.hpp>
 
+#include <wx/tooltip.h>
 #include <wx/stdpaths.h>
 #include <wx/imagpng.h>
 #include <wx/display.h>
