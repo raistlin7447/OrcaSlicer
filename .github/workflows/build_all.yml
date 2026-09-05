@@ -51,9 +51,18 @@ on:
         description: 'Only build dependencies (bypasses caching)'
         type: boolean
         default: false
+      pch-off:
+        description: 'ccache experiment: build with SLIC3R_PCH=OFF'
+        type: boolean
+        default: false
+      lanes:
+        description: 'ccache experiment: lanes to run (linux,macos,flatpak,windows)'
+        type: string
+        default: 'linux,macos,flatpak'
 
+# ccache experiment: the run id keeps concurrent dispatches on one branch alive.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{ github.run_id }}
   cancel-in-progress: true
   
 
@@ -62,6 +71,7 @@ jobs:
   check_build_script:
     name: Windows build script tests
     runs-on: windows-latest
+    if: ${{ contains(inputs.lanes || 'linux,macos,flatpak', 'windows') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -85,12 +95,13 @@ jobs:
           && '[{"arch":"","os":"orca-lnx-server"}]'
           || '[{"arch":"","os":"ubuntu-24.04"},{"arch":"aarch64","os":"ubuntu-24.04-arm"}]') }}
     # Don't run scheduled builds on forks:
-    if: ${{ !cancelled() && (github.event_name != 'schedule' || github.repository == 'OrcaSlicer/OrcaSlicer') }}
+    if: ${{ !cancelled() && (github.event_name != 'schedule' || github.repository == 'OrcaSlicer/OrcaSlicer') && contains(inputs.lanes || 'linux,macos,flatpak', 'linux') }}
     uses: ./.github/workflows/build_check_cache.yml
     with:
       os: ${{ matrix.os }}
       arch: ${{ matrix.arch }}
       build-deps-only: ${{ inputs.build-deps-only || false }}
+      pch-off: ${{ inputs.pch-off || false }}
     secrets: inherit
   build_windows:
     name: Build Windows ${{ matrix.arch }}
@@ -103,7 +114,7 @@ jobs:
           || '[{"arch":"x64","os":"windows-latest","compiler":"clang"},{"arch":"arm64","os":"windows-11-arm","compiler":"clang"}]') }}
     needs: check_build_script
     # Don't run scheduled builds on forks:
-    if: ${{ !cancelled() && needs.check_build_script.result == 'success' && (github.event_name != 'schedule' || github.repository == 'OrcaSlicer/OrcaSlicer') }}
+    if: ${{ !cancelled() && needs.check_build_script.result == 'success' && (github.event_name != 'schedule' || github.repository == 'OrcaSlicer/OrcaSlicer') && contains(inputs.lanes || 'linux,macos,flatpak', 'windows') }}
     uses: ./.github/workflows/build_check_cache.yml
     with:
       os: ${{ matrix.os }}
@@ -120,13 +131,14 @@ jobs:
           - arm64
           - x86_64
     # Don't run scheduled builds on forks:
-    if: ${{ !cancelled() && (github.event_name != 'schedule' || github.repository == 'OrcaSlicer/OrcaSlicer') }}
+    if: ${{ !cancelled() && (github.event_name != 'schedule' || github.repository == 'OrcaSlicer/OrcaSlicer') && contains(inputs.lanes || 'linux,macos,flatpak', 'macos') }}
     uses: ./.github/workflows/build_check_cache.yml
     with:
       os: ${{ vars.SELF_HOSTED && 'orca-macos-arm64' || 'macos-14' }}
       arch: ${{ matrix.arch }}
       build-deps-only: ${{ inputs.build-deps-only || false }}
       force-build: ${{ github.event_name == 'schedule' }}
+      pch-off: ${{ inputs.pch-off || false }}
     secrets: inherit
   build_macos_universal:
     name: Build macOS Universal
@@ -249,7 +261,7 @@ jobs:
           - arch: aarch64
             runner: ubuntu-24.04-arm
     # Don't run scheduled builds on forks; skip entirely on self-hosted runners
-    if: ${{ !cancelled() && !vars.SELF_HOSTED && (github.event_name != 'schedule' || github.repository == 'OrcaSlicer/OrcaSlicer') }}
+    if: ${{ !cancelled() && !vars.SELF_HOSTED && (github.event_name != 'schedule' || github.repository == 'OrcaSlicer/OrcaSlicer') && contains(inputs.lanes || 'linux,macos,flatpak', 'flatpak') }}
 
     runs-on: ${{ matrix.variant.runner }}
     env:
@@ -303,10 +315,32 @@ jobs:
         sed -i '/^build-options:/a\  no-debuginfo: true\n  strip: true' \
           scripts/flatpak/com.orcaslicer.OrcaSlicer.yml
       shell: bash
-    - name: Inject git commit hash into Flatpak manifest
+    # ccache experiment. flatpak-builder --ccache bind-mounts .flatpak-builder/ccache
+    # at /run/ccache and exports CCACHE_DIR, but it only wraps cc/c++/gcc/g++ and
+    # this manifest builds with clang, so the launcher is handed to CMake through
+    # the module's environment instead. The directory itself lives outside
+    # .flatpak-builder (symlinked in) so the flatpak-builder cache never carries it.
+    - name: Restore ccache
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ runner.temp }}/ccache
+        key: ccache-flatpak-${{ matrix.variant.arch }}-pch${{ inputs.pch-off && 'off' || 'on' }}-${{ github.sha }}
+        restore-keys: ccache-flatpak-${{ matrix.variant.arch }}-pch${{ inputs.pch-off && 'off' || 'on' }}-
+    - name: Inject git commit hash and ccache into Flatpak manifest
       run: |
-        sed -i "/name: OrcaSlicer/{n;s|buildsystem: simple|buildsystem: simple\n    build-options:\n      env:\n        git_commit_hash: \"$git_commit_hash\"|}" \
-          scripts/flatpak/com.orcaslicer.OrcaSlicer.yml
+        mkdir -p "$RUNNER_TEMP/ccache" .flatpak-builder
+        rm -rf .flatpak-builder/ccache
+        ln -s "$RUNNER_TEMP/ccache" .flatpak-builder/ccache
+        du -sh "$RUNNER_TEMP/ccache"
+        m=scripts/flatpak/com.orcaslicer.OrcaSlicer.yml
+        sed -i "/name: OrcaSlicer/{n;s|buildsystem: simple|buildsystem: simple\n    build-options:\n      env:\n        git_commit_hash: \"$git_commit_hash\"\n        CMAKE_C_COMPILER_LAUNCHER: ccache\n        CMAKE_CXX_COMPILER_LAUNCHER: ccache\n        CCACHE_MAXSIZE: 1G\n        CCACHE_SLOPPINESS: pch_defines,time_macros,include_file_mtime,include_file_ctime\n        CCACHE_NOHASHDIR: \"1\"\n        CCACHE_BASEDIR: /run/build/OrcaSlicer|}" "$m"
+        # Per-run statistics: zero them first, print them after the build.
+        sed -i '/name: OrcaSlicer$/,/^    build-commands:$/ s|^    build-commands:$|    build-commands:\n      - ccache -z|' "$m"
+        sed -i 's|^      - cmake --build build_flatpak --target install -j\$FLATPAK_BUILDER_N_JOBS$|&\n      - ccache -sv|' "$m"
+        if [ "${{ inputs.pch-off }}" = true ]; then
+          sed -i '/^  - name: OrcaSlicer$/,$ s#-DFLATPAK=ON #-DFLATPAK=ON -DSLIC3R_PCH=OFF #' "$m"
+        fi
+        grep -n -A24 '^  - name: OrcaSlicer$' "$m"
       shell: bash
     - name: Check the manifest keeps orca_deps cacheable
       run: ./scripts/flatpak/check_manifest_cacheable.sh
@@ -318,9 +352,23 @@ jobs:
       with:
         bundle: OrcaSlicer-Linux-flatpak_${{ env.ver }}_${{ matrix.variant.arch }}.flatpak
         manifest-path: scripts/flatpak/com.orcaslicer.OrcaSlicer.yml
-        cache: false
+        # cache: true is what makes the action pass --ccache; restore/save stay
+        # off so the steps above keep ownership of the flatpak-builder cache.
+        cache: true
+        restore-cache: false
+        save-cache: false
         arch: ${{ matrix.variant.arch }}
         upload-artifact: false
+    - name: ccache size after build
+      if: ${{ !cancelled() }}
+      shell: bash
+      run: du -sh "$RUNNER_TEMP/ccache"
+    - name: Save ccache
+      if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ runner.temp }}/ccache
+        key: ccache-flatpak-${{ matrix.variant.arch }}-pch${{ inputs.pch-off && 'off' || 'on' }}-${{ github.sha }}
     - name: Upload artifacts Flatpak
       uses: actions/upload-artifact@v7
       with:

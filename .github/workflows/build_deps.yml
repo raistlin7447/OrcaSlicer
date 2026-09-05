@@ -26,6 +26,10 @@ on:
       force-build:
         required: false
         type: boolean
+      pch-off:
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build_deps:
@@ -220,4 +224,5 @@ jobs:
       os: ${{ inputs.os }}
       arch: ${{ inputs.arch }}
       compiler: ${{ inputs.compiler }}
+      pch-off: ${{ inputs.pch-off }}
     secrets: inherit

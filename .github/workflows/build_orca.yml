@@ -21,6 +21,10 @@ on:
           required: false
           type: boolean
           default: false
+        pch-off:
+          required: false
+          type: boolean
+          default: false
 
 jobs:
   build_orca:
@@ -142,12 +146,55 @@ jobs:
           sudo rm -rf ~/Library/Developer/CoreSimulator/Caches/*
           df -hI /dev/disk3s1s1
 
+      # ccache experiment: the object cache is restored from the newest entry for
+      # this lane and saved under this commit's key by non-PR runs only, so PRs
+      # read the cache main populated but never write one (PR caches are scoped
+      # to the PR anyway). CMake picks the launcher up from the environment.
+      - name: Set up ccache
+        if: runner.os == 'Linux' || (runner.os == 'macOS' && !inputs.macos-combine-only)
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            brew install ccache
+          else
+            sudo apt-get update -qq && sudo apt-get install -y -qq ccache
+          fi
+          {
+            echo "CCACHE_DIR=$RUNNER_TEMP/ccache"
+            echo "CCACHE_MAXSIZE=1G"
+            echo "CCACHE_SLOPPINESS=pch_defines,time_macros,include_file_mtime,include_file_ctime"
+            echo "CCACHE_NOHASHDIR=1"
+            echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
+            echo "ccache_key=ccache-$RUNNER_OS-${{ inputs.arch || 'x86_64' }}-pch${{ inputs.pch-off && 'off' || 'on' }}"
+          } >> "$GITHUB_ENV"
+          ccache --version | head -1
+
+      - name: Restore ccache
+        if: runner.os == 'Linux' || (runner.os == 'macOS' && !inputs.macos-combine-only)
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ${{ env.ccache_key }}-${{ github.sha }}
+          restore-keys: ${{ env.ccache_key }}-
+
+      - name: Reset ccache statistics
+        if: runner.os == 'Linux' || (runner.os == 'macOS' && !inputs.macos-combine-only)
+        shell: bash
+        run: |
+          mkdir -p "$CCACHE_DIR"
+          ccache -z
+          ccache -p | grep -E '^\(?(cache_dir|max_size|sloppiness|base_dir|hash_dir|compression)' || true
+          du -sh "$CCACHE_DIR"
+
       - name: Build slicer mac
         if: runner.os == 'macOS' && !inputs.macos-combine-only
         working-directory: ${{ github.workspace }}
         # arm64 only: build the tests here; the unit_tests_macos job runs them.
         env:
           ORCA_TESTS_BUILD_ONLY: ${{ inputs.arch == 'arm64' && '1' || '' }}
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
+          ORCA_EXTRA_CMAKE_ARGS: ${{ inputs.pch-off && '-DSLIC3R_PCH=OFF' || '' }}
         run: |
           ./build_release_macos.sh -s -n -x ${{ !vars.SELF_HOSTED && '-j 3' || '' }} -a ${{ inputs.arch }} -t 10.15 ${{ inputs.arch == 'arm64' && '-T' || '' }}
 
@@ -550,12 +597,27 @@ jobs:
         run: |
           # Build + tar the unit tests (-t) on both Linux legs so each arch
           # (x86_64 + aarch64) gets tested by its own unit_tests_linux_* job.
-          ./build_linux.sh -istrlL
+          # build_linux.sh enables ccache by itself when it is on PATH.
+          ./build_linux.sh -istrlL${{ inputs.pch-off && 'p' || '' }}
           ./scripts/check_appimage_libs.sh ./build/package ./build/package/bin/orca-slicer
           appimage=./build/OrcaSlicer_Linux_AppImage${{ env.ubuntu-ver-str }}${{ env.arch_suffix }}_${{ env.ver }}.AppImage
           mv -n ./build/OrcaSlicer_Linux_V${{ env.ver_pure }}.AppImage "$appimage"
           chmod +x "$appimage"
           tar -cvf build_tests.tar build/tests
+
+      - name: ccache statistics
+        if: runner.os == 'Linux' || (runner.os == 'macOS' && !inputs.macos-combine-only)
+        shell: bash
+        run: |
+          ccache -sv
+          du -sh "$CCACHE_DIR"
+
+      - name: Save ccache
+        if: ${{ !cancelled() && github.event_name != 'pull_request' && (runner.os == 'Linux' || (runner.os == 'macOS' && !inputs.macos-combine-only)) }}
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ${{ env.ccache_key }}-${{ github.sha }}
 
         # Use tar because upload-artifacts won't always preserve directory structure
         # and doesn't preserve file permissions
