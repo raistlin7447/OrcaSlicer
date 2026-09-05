@@ -384,3 +384,39 @@ jobs:
         asset_name: OrcaSlicer-Linux-flatpak_nightly${{ env.nightly_suffix }}_${{ matrix.variant.arch }}.flatpak
         asset_content_type: application/octet-stream
         max_releases: 1 # optional, if there are more releases than this matching the asset_name, the oldest ones are going to be deleted
+
+  prune_ccache:
+    name: Prune superseded ccache entries
+    needs: [build_linux, build_macos_arch, flatpak]
+    # actions/cache entries are immutable and the key carries the commit sha, so
+    # every push leaves the previous entry behind while only the newest is ever
+    # restored. Left alone the surplus evicts the deps and flatpak-builder
+    # caches, which costs far more than the ccache saves. Only pushes write a
+    # cache, and a fork PR's read-only token could not delete anyway.
+    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      # Housekeeping: a failure here must not fail an otherwise good build.
+      - name: Delete superseded ccache entries
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          # The runs above just wrote one; the spare covers a restore in flight.
+          KEEP: '2'
+        run: |
+          # ref= confines this to the branch that just built, so every other
+          # branch keeps its own entries. key= matches on prefix.
+          prefixes=$(gh api "repos/$REPO/actions/caches?ref=${{ github.ref }}&per_page=100" \
+            --jq '.actions_caches[].key | select(startswith("ccache-")) | sub("-[0-9a-f]{40}$";"")' | sort -u)
+          for p in $prefixes; do
+            gh api "repos/$REPO/actions/caches?ref=${{ github.ref }}&key=$p-&sort=created_at&direction=desc&per_page=100" \
+              --jq '.actions_caches[] | [.id, .key, (.size_in_bytes / 1000000 | floor)] | map(tostring) | join(" ")' |
+              tail -n +$((KEEP + 1)) |
+              while read -r id key size; do
+                gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null &&
+                  echo "deleted $key ($size MB)"
+              done
+          done
