@@ -1,4 +1,6 @@
 #include "PhysicalPrinterDialog.hpp"
+
+#include <wx/tooltip.h>
 #include "PresetComboBoxes.hpp"
 #include "PrinterCloudAuthDialog.hpp"
 
