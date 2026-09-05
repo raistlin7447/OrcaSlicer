@@ -1,4 +1,6 @@
 #include "AmsMappingPopup.hpp"
+
+#include <wx/tooltip.h>
 #include "I18N.hpp"
 
 #include "libslic3r/Utils.hpp"
