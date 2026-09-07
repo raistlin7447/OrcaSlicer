@@ -1,5 +1,7 @@
 #include <catch2/catch_all.hpp>
 
+#include <algorithm>
+
 #include "libslic3r/Layer.hpp"
 #include "libslic3r/TriangleMesh.hpp"
 
@@ -122,4 +124,80 @@ TEST_CASE("A raft is still generated under tree support", "[TreeSupport]")
     REQUIRE(rafted_object->support_layers().size() > unrafted_object->support_layers().size());
     // The raft goes under the object.
     REQUIRE(rafted_object->layers().front()->print_z > unrafted_object->layers().front()->print_z);
+}
+
+// drop_nodes() decides the node merges and spawns the next layer's nodes in parallel. Every one of
+// those decisions has to be applied in a fixed order, or the same model gives different branches on
+// each slice. Point counts and total length are order insensitive, so this compares the sequence.
+TEST_CASE("Tree support toolpaths do not depend on thread scheduling", "[TreeSupport][Regression]")
+{
+    // Index of the first differing point, or the common length when they match. An index keeps a
+    // failure readable; comparing the vectors themselves dumps thousands of points.
+    auto first_difference = [](const Points &a, const Points &b) {
+        const size_t common = std::min(a.size(), b.size());
+        for (size_t i = 0; i < common; ++i)
+            if (a[i] != b[i])
+                return i;
+        return common;
+    };
+
+    auto sliced_twice_matches = [&](const TriangleMesh &mesh, int build_plate_only,
+                                   const char *style = "tree_slim") {
+        Slic3r::Print first_print, second_print;
+        slice_with_tree_support(mesh, first_print, style, 30, build_plate_only);
+        slice_with_tree_support(mesh, second_print, style, 30, build_plate_only);
+        const Points first  = support_points(first_print);
+        const Points second = support_points(second_print);
+        REQUIRE(first.size() > 1000); // without support the comparison below passes vacuously
+        REQUIRE(second.size() == first.size());
+        REQUIRE(first_difference(first, second) == first.size());
+    };
+
+    // Scaled up so that a layer holds enough nodes for the parallel range to be split. At stock
+    // size it stays in one chunk and the order never varies.
+    SECTION("overhang")            { sliced_twice_matches(scaled(TestMesh::overhang, 2.f), 0); }
+    SECTION("bridge with hole")    { sliced_twice_matches(scaled(TestMesh::bridge_with_hole, 3.f), 0); }
+    // Dropping every branch that cannot reach the bed leaves the survivors dense enough that the
+    // neighbour merge fires in bulk.
+    SECTION("on the build plate")  { sliced_twice_matches(scaled(TestMesh::overhang, 4.f), 1); }
+    // Branches resting on the model are what put nodes in a part group other than 0, which is the
+    // only way to reach the prune in the second pass. tree_hybrid additionally builds polygon
+    // nodes, so it is the only style that exercises the overhang merge.
+    SECTION("resting on the model") { sliced_twice_matches(two_tier_mesh(), 0); }
+    SECTION("hybrid on the model")  { sliced_twice_matches(two_tier_mesh(), 0, "tree_hybrid"); }
+}
+
+
+// Prim breaks equal-distance ties by heap address. A 1 mm branch diameter puts neighbours close
+// enough to tie, and an explicit line width pins max_move_dist, so the moved tie winner reaches
+// the support toolpaths.
+TEST_CASE("Tree support toolpaths do not depend on the MST tie order", "[TreeSupport][Regression]")
+{
+    auto slice_once = [](Slic3r::Print &print) {
+        Slic3r::Test::init_and_process_print({ two_tier_mesh() }, print, {
+            { "enable_support",               1 },
+            { "support_type",                 "tree(auto)" },
+            { "support_style",                "tree_hybrid" },
+            { "support_threshold_angle",      30 },
+            { "layer_height",                 0.2 },
+            { "tree_support_branch_diameter", 1.0 },
+            { "tree_support_branch_distance", 5.0 },
+            { "tree_support_branch_angle",    40 },
+            { "support_line_width",           0.4 },
+        });
+    };
+
+    Slic3r::Print first_print, second_print;
+    slice_once(first_print);
+    slice_once(second_print);
+    const Points first  = support_points(first_print);
+    const Points second = support_points(second_print);
+
+    REQUIRE(first.size() > 1000);
+    REQUIRE(second.size() == first.size());
+
+    size_t first_difference = first.size();
+    for (size_t i = 0; i < first.size(); ++i)
+        if (first[i] != second[i]) { first_difference = i; break; }
+    REQUIRE(first_difference == first.size());
 }
