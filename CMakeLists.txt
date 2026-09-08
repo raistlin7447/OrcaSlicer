@@ -555,64 +555,59 @@ if ((NOT MSVC OR IS_CLANG_CL) AND ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR 
     endif ()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-reorder" )
 
-    # On GCC and Clang, no return from a non-void function is a warning only. Here, we make it an error.
-    add_compile_options(-Werror=return-type)
+    # Every warning is an error. Categories still being cleaned are listed below and
+    # demoted back to warnings; that list shrinks to nothing as they reach zero.
+    #
+    # This is deliberately fail-closed. An allowlist of cleared categories silently
+    # permits anything nobody has inventoried, and a Windows-only census demonstrably
+    # misses sites on Linux and macOS. Erroring by default means a category nobody has
+    # looked at still has to be dealt with rather than quietly accumulating.
+    #
+    # Dependency headers are excluded by the SYSTEM include flag, -imsvc on clang-cl and
+    # -isystem elsewhere, so third-party diagnostics are not promoted. The one known leak
+    # is GCC's maybe-uninitialized, which runs after inlining and reports inside
+    # boost/variant and boost/tuple regardless; that is why uninitialized is demoted for
+    # GCC below rather than being treated as clean everywhere.
+    add_compile_options(-Werror)
 
-    # Warning categories that are at zero. Add a name once its category is cleared.
-    set(werror_categories
+    # Not yet at zero. Remove a name once its category is cleared on every compiler.
+    set(werror_exceptions
 
-        comment
-        deprecated-copy
-        pessimizing-move
-        unused-value
+        bitwise-instead-of-logical
+        braced-scalar-init
+        cast-function-type-mismatch
+        delete-non-abstract-non-virtual-dtor
+        implicit-const-int-float-conversion
+        macro-redefined
+        microsoft-cast
+        microsoft-goto
+        missing-braces
+        nonportable-include-path
+        overloaded-virtual
+        overriding-option
+
+        # At zero on Windows only. Field.hpp 631-632 are read solely under __WXMSW__, and
+        # ParamsPanel.hpp:69 exists only under __WXOSX__ and is read nowhere.
+        unused-private-field
     )
 
-    # Same, for names our oldest supported GCC does not have. GCC rejects an unknown
-    # -Werror= argument outright, so these cannot go in the list above.
-    #
-    # unused-private-field is deliberately absent. It is at zero on Windows only. Field.hpp
-    # 631-632 are read solely under __WXMSW__, and ParamsPanel.hpp:69 exists only under
-    # __WXOSX__ and is read nowhere, so Linux and macOS still have sites a Windows census
-    # cannot see. Do not add it back from a clang-cl measurement alone.
-    #
-    # uninitialized is Clang-only for a reason that will not change. GCC folds
-    # maybe-uninitialized into it, and that analysis runs after inlining, so it fires
-    # inside boost/variant and boost/tuple even though the dep prefix is passed as
-    # -isystem. gcc-13 accepts the name, so a flag-support table will suggest promoting
-    # it; promoting it would make dependency diagnostics errors, which we do not do.
-    if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
-        list(APPEND werror_categories
-
-            constant-logical-operand
-            dangling-assignment-gsl
-            dangling-else
-            dangling-gsl
-            defaulted-function-deleted
-            delete-incomplete
-            deprecated-copy-with-user-provided-copy
-            empty-body
-            format
-            format-security
-            logical-op-parentheses
-            nontrivial-memcall
-            parentheses-equality
-            range-loop-construct
-            self-assign
-            self-assign-overloaded
-            sometimes-uninitialized
-            string-compare
-            string-plus-int
-            tautological-bitwise-compare
-            tautological-constant-out-of-range-compare
-            tautological-overlap-compare
-            undefined-bool-conversion
-            uninitialized
-            unused-lambda-capture
-        )
+    # GCC folds maybe-uninitialized into uninitialized, and that analysis fires inside
+    # boost/variant and boost/tuple even with the dep prefix passed as -isystem. Clang
+    # has no such leak, so this stays a GCC-only exception.
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        list(APPEND werror_exceptions uninitialized)
     endif ()
 
-    foreach (category IN LISTS werror_categories)
-        add_compile_options(-Werror=${category})
+    # A compiler that does not know a warning cannot emit it, so an unknown name needs no
+    # exception. Probe with -W<name>, not -Wno-error=<name>: compilers accept unknown
+    # -Wno- forms silently, which would make every probe pass.
+    include(CheckCXXCompilerFlag)
+    foreach (category IN LISTS werror_exceptions)
+        string(MAKE_C_IDENTIFIER "ORCA_HAS_W_${category}" _orca_has_w)
+        check_cxx_compiler_flag("-W${category}" ${_orca_has_w})
+        if (${_orca_has_w})
+            add_compile_options(-Wno-error=${category})
+        endif ()
     endforeach ()
 
     # Since some portions of code are just commented out or put under conditional compilation, there are
@@ -1265,8 +1260,8 @@ endif ()
 if (NOT SLIC3R_WARNINGS)
     add_compile_options(-w)
 elseif (MSVC AND NOT IS_CLANG_CL)
-    # /we4715 is C4715, no return from a non-void function, matching the
-    # -Werror=return-type the GNU/Clang builds apply.
+    # /we4715 is C4715, no return from a non-void function. MSVC is not part of the
+    # -Werror model the GNU/Clang builds use, so this stays a single promoted warning.
     add_compile_options(/W3 /we4715)
 endif ()
 
