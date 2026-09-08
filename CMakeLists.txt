@@ -574,6 +574,12 @@ if ((NOT MSVC OR IS_CLANG_CL) AND ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR 
     # 631-632 are read solely under __WXMSW__, and ParamsPanel.hpp:69 exists only under
     # __WXOSX__ and is read nowhere, so Linux and macOS still have sites a Windows census
     # cannot see. Do not add it back from a clang-cl measurement alone.
+    #
+    # uninitialized is Clang-only for a reason that will not change. GCC folds
+    # maybe-uninitialized into it, and that analysis runs after inlining, so it fires
+    # inside boost/variant and boost/tuple even though the dep prefix is passed as
+    # -isystem. gcc-13 accepts the name, so a flag-support table will suggest promoting
+    # it; promoting it would make dependency diagnostics errors, which we do not do.
     if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
         list(APPEND werror_categories
 
