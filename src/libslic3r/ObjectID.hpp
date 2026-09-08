@@ -170,6 +170,10 @@ public:
         this->m_check_sum      = rhs.check_sum();
         this->m_connectors_cnt = rhs.connectors_cnt();
     }
+    // Declared because the user-provided operator= below, and the virtual destructor
+    // above, each deprecate the implicit copy constructor under C++20.
+    CutObjectBase(const CutObjectBase &) = default;
+
     CutObjectBase &operator=(const CutObjectBase &other)
     {
         this->copy(other);
