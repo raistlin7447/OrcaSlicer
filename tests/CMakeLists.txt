@@ -91,3 +91,6 @@ if (UNIX AND NOT APPLE AND TARGET OrcaSlicer)
     add_subdirectory(cli)
 endif ()
 
+if (ORCA_BENCHMARKS)
+    add_subdirectory(orcabench)
+endif ()
