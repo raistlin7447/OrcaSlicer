@@ -572,10 +572,32 @@ if ((NOT MSVC OR IS_CLANG_CL) AND ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR 
     if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
         list(APPEND werror_categories
 
+            constant-logical-operand
+            dangling-assignment-gsl
+            dangling-else
+            dangling-gsl
             defaulted-function-deleted
+            delete-incomplete
             deprecated-copy-with-user-provided-copy
+            empty-body
+            format
+            format-security
+            logical-op-parentheses
+            nontrivial-memcall
+            parentheses-equality
+            range-loop-construct
+            self-assign
+            self-assign-overloaded
+            sometimes-uninitialized
+            string-compare
+            string-plus-int
+            tautological-bitwise-compare
+            tautological-constant-out-of-range-compare
+            tautological-overlap-compare
             undefined-bool-conversion
+            uninitialized
             unused-lambda-capture
+            unused-private-field
         )
     endif ()
 
