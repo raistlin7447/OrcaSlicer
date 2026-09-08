@@ -583,6 +583,12 @@ if ((NOT MSVC OR IS_CLANG_CL) AND ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR 
         microsoft-goto
         missing-braces
         nonportable-include-path
+
+        # macOS only, MacDarkMode.mm. Two calls to AppKit's private titlebarViewController
+        # and one to a wxWidgets category on NSTableColumn whose declaring header is not
+        # imported. Silencing these means declaring the private selectors ourselves, which
+        # is a decision for someone who can build and run macOS.
+        objc-method-access
         overloaded-virtual
         overriding-option
 
