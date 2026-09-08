@@ -569,6 +569,11 @@ if ((NOT MSVC OR IS_CLANG_CL) AND ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR 
 
     # Same, for names our oldest supported GCC does not have. GCC rejects an unknown
     # -Werror= argument outright, so these cannot go in the list above.
+    #
+    # unused-private-field is deliberately absent. It is at zero on Windows only. Field.hpp
+    # 631-632 are read solely under __WXMSW__, and ParamsPanel.hpp:69 exists only under
+    # __WXOSX__ and is read nowhere, so Linux and macOS still have sites a Windows census
+    # cannot see. Do not add it back from a clang-cl measurement alone.
     if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
         list(APPEND werror_categories
 
@@ -597,7 +602,6 @@ if ((NOT MSVC OR IS_CLANG_CL) AND ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR 
             undefined-bool-conversion
             uninitialized
             unused-lambda-capture
-            unused-private-field
         )
     endif ()
 
