@@ -280,6 +280,7 @@ endif ()
 option(SLIC3R_BUILD_SANDBOXES   "Build development sandboxes" OFF)
 option(BUILD_TESTS       "Build unit tests" OFF)
 option(ORCA_TOOLS       "Build Orca tools" OFF)
+option(ORCA_BENCHMARKS   "Build the slicing benchmark framework" OFF)
 
 if (FLATPAK)
     set(SLIC3R_FHS ON CACHE BOOL "" FORCE)
@@ -1220,6 +1221,10 @@ add_dependencies(gettext_make_pot hintsToPot)
 
 if(SLIC3R_BUILD_SANDBOXES)
     add_subdirectory(sandboxes)
+endif()
+
+if(ORCA_BENCHMARKS)
+    add_subdirectory(benchmarks)
 endif()
 
 if(BUILD_TESTS)

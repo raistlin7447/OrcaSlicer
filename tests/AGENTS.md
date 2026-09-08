@@ -10,6 +10,7 @@ Rules for writing tests under `tests/`. [CATCH2.md](CATCH2.md) is the Catch2 ref
 - `libnest2d`: 2D nesting and packing.
 - `slic3rutils`: the Python plugin system and its slicing-pipeline bindings.
 - `filament_group`: filament-to-extruder grouping, checked against golden files.
+- `orcabench`: the benchmarking framework under `benchmarks/`. Built only with `-DORCA_BENCHMARKS=ON`.
 
 ## Building and running
 

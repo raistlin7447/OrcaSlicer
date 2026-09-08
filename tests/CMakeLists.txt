@@ -85,4 +85,6 @@ add_subdirectory(fff_print)
 add_subdirectory(sla_print)
 add_subdirectory(filament_group)
 
-
+if (ORCA_BENCHMARKS)
+    add_subdirectory(orcabench)
+endif ()
