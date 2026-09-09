@@ -583,14 +583,14 @@ if ((NOT MSVC OR IS_CLANG_CL) AND ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR 
         microsoft-goto
         missing-braces
         nonportable-include-path
+        overloaded-virtual
+        overriding-option
 
         # macOS only, MacDarkMode.mm. Two calls to AppKit's private titlebarViewController
         # and one to a wxWidgets category on NSTableColumn whose declaring header is not
         # imported. Silencing these means declaring the private selectors ourselves, which
         # is a decision for someone who can build and run macOS.
         objc-method-access
-        overloaded-virtual
-        overriding-option
 
         # At zero on Windows only. Field.hpp 631-632 are read solely under __WXMSW__, and
         # ParamsPanel.hpp:69 exists only under __WXOSX__ and is read nowhere.
