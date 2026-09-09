@@ -566,8 +566,8 @@ if ((NOT MSVC OR IS_CLANG_CL) AND ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR 
     # Dependency headers are excluded by the SYSTEM include flag, -imsvc on clang-cl and
     # -isystem elsewhere, so third-party diagnostics are not promoted. The one known leak
     # is GCC's maybe-uninitialized, which runs after inlining and reports inside
-    # boost/variant and boost/tuple regardless; that is why uninitialized is demoted for
-    # GCC below rather than being treated as clean everywhere.
+    # boost/variant and boost/tuple regardless; that is why it is demoted for GCC below
+    # rather than being treated as clean everywhere.
     add_compile_options(-Werror)
 
     # Not yet at zero. Remove a name once its category is cleared on every compiler.
@@ -597,11 +597,19 @@ if ((NOT MSVC OR IS_CLANG_CL) AND ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR 
         unused-private-field
     )
 
-    # GCC folds maybe-uninitialized into uninitialized, and that analysis fires inside
-    # boost/variant and boost/tuple even with the dep prefix passed as -isystem. Clang
-    # has no such leak, so this stays a GCC-only exception.
+    # GCC-only. Both are spelled out because -Wno-error=uninitialized does not cover
+    # maybe-uninitialized: GCC names the latter as the controlling option, so it needs
+    # its own entry. Verified on gcc 15.2 rather than assumed.
+    #
+    # maybe-uninitialized runs after inlining and reports inside boost/variant,
+    # boost/tuple and the bundled clipper header regardless of -isystem, so it cannot be
+    # cleared from our side. array-bounds fires once, on ConfigOptionVector::set_at
+    # inlined into OrcaSlicer.cpp: GCC analyses the branch that casts rhs to
+    # ConfigOptionVector<T>* without proving the preceding type test excludes it, and
+    # the scalar ConfigOptionFloat passed there is smaller. That branch is not taken at
+    # runtime, so the report is a false positive. Clang diagnoses neither.
     if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        list(APPEND werror_exceptions uninitialized)
+        list(APPEND werror_exceptions maybe-uninitialized array-bounds)
     endif ()
 
     # A compiler that does not know a warning cannot emit it, so an unknown name needs no
