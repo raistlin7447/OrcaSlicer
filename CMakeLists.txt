@@ -582,6 +582,12 @@ if ((NOT MSVC OR IS_CLANG_CL) AND ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR 
         # imported. Silencing these means declaring the private selectors ourselves, which
         # is a decision for someone who can build and run macOS.
         objc-method-access
+
+        # Windows arm64 only. Around two dozen GetProcAddress casts, most of them in the
+        # vendored dark_mode.hpp, retype FARPROC to the real signature; the __stdcall
+        # typedefs collapse to FARPROC on x64 so only arm64 reports them. Clearing this
+        # is a focused sweep of its own, not part of this pass.
+        cast-function-type-mismatch
     )
 
     # GCC-only. -Wno-error=uninitialized does not cover maybe-uninitialized, which GCC
