@@ -272,6 +272,8 @@ set(lisbslic3r_sources
     GCode/WipeTower2.hpp
     GCode/WipeTower.cpp
     GCode/WipeTower.hpp
+    GCode/WipeTowerEstimate.cpp
+    GCode/WipeTowerEstimate.hpp
     GCodeWriter.cpp
     GCodeWriter.hpp
     Geometry/ArcWelder.hpp
@@ -370,6 +372,8 @@ set(lisbslic3r_sources
     Preset.hpp
     PrincipalComponents2D.cpp
     PrincipalComponents2D.hpp
+    PublishSettings.cpp
+    PublishSettings.hpp
     PrintApply.cpp
     PrintBase.cpp
     PrintBase.hpp
