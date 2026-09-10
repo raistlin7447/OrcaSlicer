@@ -573,41 +573,22 @@ if ((NOT MSVC OR IS_CLANG_CL) AND ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR 
     # Not yet at zero. Remove a name once its category is cleared on every compiler.
     set(werror_exceptions
 
-        bitwise-instead-of-logical
-        braced-scalar-init
-        cast-function-type-mismatch
-        delete-non-abstract-non-virtual-dtor
-        implicit-const-int-float-conversion
-        macro-redefined
-        microsoft-cast
-        microsoft-goto
-        missing-braces
-        nonportable-include-path
+        # Two hidden overloads, Field.hpp:654 and GUI_ObjectTableSettings.hpp:74, with
+        # fixes pending in other people's pull requests.
         overloaded-virtual
-        overriding-option
 
         # macOS only, MacDarkMode.mm. Two calls to AppKit's private titlebarViewController
         # and one to a wxWidgets category on NSTableColumn whose declaring header is not
         # imported. Silencing these means declaring the private selectors ourselves, which
         # is a decision for someone who can build and run macOS.
         objc-method-access
-
-        # At zero on Windows only. Field.hpp 631-632 are read solely under __WXMSW__, and
-        # ParamsPanel.hpp:69 exists only under __WXOSX__ and is read nowhere.
-        unused-private-field
     )
 
-    # GCC-only. Both are spelled out because -Wno-error=uninitialized does not cover
-    # maybe-uninitialized: GCC names the latter as the controlling option, so it needs
-    # its own entry. Verified on gcc 15.2 rather than assumed.
-    #
-    # maybe-uninitialized runs after inlining and reports inside boost/variant,
-    # boost/tuple and the bundled clipper header regardless of -isystem, so it cannot be
-    # cleared from our side. array-bounds fires once, on ConfigOptionVector::set_at
-    # inlined into OrcaSlicer.cpp: GCC analyses the branch that casts rhs to
-    # ConfigOptionVector<T>* without proving the preceding type test excludes it, and
-    # the scalar ConfigOptionFloat passed there is smaller. That branch is not taken at
-    # runtime, so the report is a false positive. Clang diagnoses neither.
+    # GCC-only. -Wno-error=uninitialized does not cover maybe-uninitialized, which GCC
+    # names as its own controlling option; it reports inside boost/variant, boost/tuple and
+    # the bundled clipper header regardless of -isystem. array-bounds fires once, on
+    # ConfigOptionVector::set_at inlined into OrcaSlicer.cpp, on a branch the preceding
+    # type test never lets it reach.
     if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         list(APPEND werror_exceptions maybe-uninitialized array-bounds)
     endif ()
@@ -621,6 +602,14 @@ if ((NOT MSVC OR IS_CLANG_CL) AND ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR 
         check_cxx_compiler_flag("-W${category}" ${_orca_has_w})
         if (${_orca_has_w})
             add_compile_options(-Wno-error=${category})
+        else ()
+            # A warning whose option takes a =N argument rejects the bare form, so the
+            # probe above says no and the exception would be dropped silently. GCC also
+            # matches these only when -Wno-error= carries the trailing =.
+            check_cxx_compiler_flag("-W${category}=1" ${_orca_has_w}_arg)
+            if (${${_orca_has_w}_arg})
+                add_compile_options(-Wno-error=${category}=)
+            endif ()
         endif ()
     endforeach ()
 
