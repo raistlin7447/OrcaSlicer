@@ -553,66 +553,94 @@ if ((NOT MSVC OR IS_CLANG_CL) AND ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR 
     elseif (NOT MINGW)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall" )
     endif ()
-    # A warning category we tolerate is handled one of two ways, kept separate:
-    #   disabled - never wanted. Off everywhere, permanently.
-    #   demoted  - wanted, but not cleared yet: stays a warning rather than an error,
-    #              and comes off the list once it reaches zero.
+    # Every warning is an error unless it appears in one of the two lists below.
+    #   disabled - never wanted. Off everywhere, so it never warns or errors.
+    #   demoted  - wanted, not cleared yet. Still warns, does not error.
 
-    # Disabled: -Wreorder fires on member initialisation we order deliberately.
-    add_compile_options(-Wno-reorder)
+    # Disabled.
+    set(warnings_disabled
+        reorder                  # members initialised in an order we chose
+        sign-compare             # signed/unsigned comparisons throughout
+        misleading-indentation   # false positives on mixed tabs and spaces
+        switch                   # unhandled enum value in a switch
+        unused-function          # commented-out or conditionally compiled code
+        unused-variable          # commented-out or conditionally compiled code
+        unused-but-set-variable  # commented-out or conditionally compiled code
+        unused-label             # commented-out or conditionally compiled code
+        unused-local-typedefs    # commented-out or conditionally compiled code
+    )
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        list(APPEND warnings_disabled deprecated-declarations)  # legacy OpenGL calls
+    endif ()
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 6.0)
+        list(APPEND warnings_disabled ignored-attributes)       # from Eigen headers marked SYSTEM
+    endif ()
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        list(APPEND warnings_disabled unknown-pragmas)          # igl pragmas, GCC bug 66943
+    endif ()
+    foreach (w IN LISTS warnings_disabled)
+        add_compile_options(-Wno-${w})
+    endforeach ()
 
-    # Everything outside those two lists is an error. Fail-closed on purpose. An
-    # allowlist of cleared categories silently permits anything nobody has inventoried,
-    # and a Windows-only census demonstrably misses sites on Linux and macOS. Erroring by
-    # default means a category nobody has looked at still has to be dealt with rather than
-    # quietly accumulating.
-    #
-    # Dependency headers are excluded by the SYSTEM include flag, -imsvc on clang-cl and
-    # -isystem elsewhere, so third-party diagnostics are not promoted. The one known leak
-    # is GCC's maybe-uninitialized, which runs after inlining and reports inside
-    # boost/variant and boost/tuple regardless; that is why it is demoted for GCC below
-    # rather than being treated as clean everywhere.
+    # Turn everything else into an error. Dependency headers are exempt because the SYSTEM
+    # include flag (-imsvc on clang-cl, -isystem elsewhere) keeps their diagnostics out,
+    # apart from GCC's maybe-uninitialized, demoted below.
     add_compile_options(-Werror)
 
-    # Demoted: still emitted as a warning. Remove a name once its category is cleared on
-    # every compiler.
-    set(werror_exceptions
-
-        # macOS only, MacDarkMode.mm. Two calls to AppKit's private titlebarViewController
-        # and one to a wxWidgets category on NSTableColumn whose declaring header is not
-        # imported. Silencing these means declaring the private selectors ourselves, which
-        # is a decision for someone who can build and run macOS.
-        objc-method-access
-
-        # Windows arm64 only. Around two dozen GetProcAddress casts, most of them in the
-        # vendored dark_mode.hpp, retype FARPROC to the real signature; the __stdcall
-        # typedefs collapse to FARPROC on x64 so only arm64 reports them. Clearing this
-        # is a focused sweep of its own, not part of this pass.
-        cast-function-type-mismatch
-    )
-
-    # GCC-only. -Wno-error=uninitialized does not cover maybe-uninitialized, which GCC
-    # names as its own controlling option; it reports inside boost/variant, boost/tuple and
-    # the bundled clipper header regardless of -isystem. array-bounds fires once, on
-    # ConfigOptionVector::set_at inlined into OrcaSlicer.cpp, on a branch the preceding
-    # type test never lets it reach.
+    # Demoted. Remove a name once its category is cleared on every compiler.
+    set(warnings_demoted)
+    if (APPLE)
+        list(APPEND warnings_demoted
+            # MacDarkMode.mm makes two calls to AppKit's private titlebarViewController
+            # and one to a wxWidgets category on NSTableColumn whose header is not
+            # imported. Clearing it means declaring the private selectors ourselves, which
+            # needs a macOS build to verify.
+            objc-method-access
+        )
+    endif ()
+    if (WIN32 AND CMAKE_SYSTEM_PROCESSOR STREQUAL "ARM64")
+        list(APPEND warnings_demoted
+            # About two dozen GetProcAddress casts, most in the vendored dark_mode.hpp,
+            # retype FARPROC to a real signature. The __stdcall typedefs are identical to
+            # FARPROC on x64, so only arm64 reports them. Clearing them is a separate
+            # sweep.
+            cast-function-type-mismatch
+        )
+    endif ()
     if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        list(APPEND werror_exceptions maybe-uninitialized array-bounds)
+        list(APPEND warnings_demoted
+            # maybe-uninitialized runs after inlining and reports inside boost/variant,
+            # boost/tuple and the bundled clipper header even with -isystem.
+            maybe-uninitialized
+
+            # array-bounds is reported once, where ConfigOptionVector::set_at inlines
+            # into OrcaSlicer.cpp on a branch the preceding type test rules out.
+            array-bounds
+
+            # template-id-cdtor is a GCC 14+ warning in the bundled Clipper2 headers.
+            template-id-cdtor
+        )
+    endif ()
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        list(APPEND warnings_demoted
+            # enum-constexpr-conversion is a Clang warning that defaults to an error,
+            # present through clang 20 and gone in clang 21.
+            enum-constexpr-conversion
+        )
     endif ()
 
-    # A compiler that does not know a warning cannot emit it, so an unknown name needs no
-    # exception. Probe with -W<name>, not -Wno-error=<name>: compilers accept unknown
-    # -Wno- forms silently, which would make every probe pass.
+    # The list mixes names not every compiler has, so add each exception only where the
+    # compiler knows the warning. Probe with the positive -W<name>, which an unknown
+    # warning fails on both compilers (GCC errors, Clang reports unknown-warning-option).
+    # An option that takes a =N argument rejects the bare -W<name>, so fall back to
+    # -W<name>=1 and demote with the trailing =.
     include(CheckCXXCompilerFlag)
-    foreach (category IN LISTS werror_exceptions)
+    foreach (category IN LISTS warnings_demoted)
         string(MAKE_C_IDENTIFIER "ORCA_HAS_W_${category}" _orca_has_w)
         check_cxx_compiler_flag("-W${category}" ${_orca_has_w})
         if (${_orca_has_w})
             add_compile_options(-Wno-error=${category})
         else ()
-            # A warning whose option takes a =N argument rejects the bare form, so the
-            # probe above says no and the exception would be dropped silently. GCC also
-            # matches these only when -Wno-error= carries the trailing =.
             check_cxx_compiler_flag("-W${category}=1" ${_orca_has_w}_arg)
             if (${${_orca_has_w}_arg})
                 add_compile_options(-Wno-error=${category}=)
@@ -620,65 +648,12 @@ if ((NOT MSVC OR IS_CLANG_CL) AND ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR 
         endif ()
     endforeach ()
 
-    # Since some portions of code are just commented out or put under conditional compilation, there are
-    # a bunch of warning related to unused functions and variables. Suppress those warnings to not pollute
-    # compilers diagnostics output with warnings we not going to look at
-    add_compile_options(-Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-label -Wno-unused-local-typedefs)
-
-    # Ignore signed/unsigned comparison warnings
-    add_compile_options(-Wno-sign-compare)
-
-    # The mismatch of tabs and spaces throughout the project can sometimes
-    # cause this warning to appear even though the indentation is fine.
-    # Some includes also cause the warning
-    add_compile_options(-Wno-misleading-indentation)
-
-    # Disable warning if enum value does not have a corresponding case in switch statement
-    add_compile_options(-Wno-switch)
-
-    # removes LOTS of extraneous Eigen warnings (GCC only supports it since 6.1)
-    # https://eigen.tuxfamily.org/bz/show_bug.cgi?id=1221
-    if("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang" OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 6.0)
-        add_compile_options(-Wno-ignored-attributes) # Tamas: Eigen include dirs are marked as SYSTEM
-    endif()
-
-    # Clang reports legacy OpenGL calls as deprecated. Turn off the warning for now
-    # to reduce the clutter, we know about this one. It should be reenabled after
-    # we finally get rid of the deprecated code.
-    if("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
-        add_compile_options(-Wno-deprecated-declarations)
-    endif()
-
-    if((${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang" OR ${CMAKE_CXX_COMPILER_ID} STREQUAL "AppleClang") AND ${CMAKE_CXX_COMPILER_VERSION} VERSION_GREATER 15)
-        include(CheckCXXCompilerFlag)
-        check_cxx_compiler_flag(-Wno-error=enum-constexpr-conversion HAS_WNO_ERROR_ENUM_CONSTEXPR_CONV)
-        if(HAS_WNO_ERROR_ENUM_CONSTEXPR_CONV)
-            add_compile_options(-Wno-error=enum-constexpr-conversion)
-        endif()
-    endif()
-
-    #GCC generates loads of -Wunknown-pragmas when compiling igl. The fix is not easy due to a bug in gcc, see
-    # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=66943 or
-    # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=53431
-    # We will turn the warning of for GCC for now:
-    if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-        # GCC generates loads of -Wunknown-pragmas when compiling igl. The fix is not easy due to a bug in gcc, see
-        # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=66943 or
-        # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=53431
-        # We will turn the warning of for GCC for now:
-        add_compile_options(-Wno-unknown-pragmas)
-    endif()
-
     # Compress the debug info with zstd to save space in Flatpak CI builds
     if(FLATPAK)
         if(("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 13.0) OR
            ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15.0))
             add_compile_options(-gz=zstd)
         endif()
-    endif()
-
-    if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 14)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=template-id-cdtor" )
     endif()
 
 endif()
