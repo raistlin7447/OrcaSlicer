@@ -553,15 +553,19 @@ if ((NOT MSVC OR IS_CLANG_CL) AND ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR 
     elseif (NOT MINGW)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall" )
     endif ()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-reorder" )
+    # A warning category we tolerate is handled one of two ways, kept separate:
+    #   disabled - never wanted. Off everywhere, permanently.
+    #   demoted  - wanted, but not cleared yet: stays a warning rather than an error,
+    #              and comes off the list once it reaches zero.
 
-    # Every warning is an error. Categories still being cleaned are listed below and
-    # demoted back to warnings; that list shrinks to nothing as they reach zero.
-    #
-    # This is deliberately fail-closed. An allowlist of cleared categories silently
-    # permits anything nobody has inventoried, and a Windows-only census demonstrably
-    # misses sites on Linux and macOS. Erroring by default means a category nobody has
-    # looked at still has to be dealt with rather than quietly accumulating.
+    # Disabled: -Wreorder fires on member initialisation we order deliberately.
+    add_compile_options(-Wno-reorder)
+
+    # Everything outside those two lists is an error. Fail-closed on purpose. An
+    # allowlist of cleared categories silently permits anything nobody has inventoried,
+    # and a Windows-only census demonstrably misses sites on Linux and macOS. Erroring by
+    # default means a category nobody has looked at still has to be dealt with rather than
+    # quietly accumulating.
     #
     # Dependency headers are excluded by the SYSTEM include flag, -imsvc on clang-cl and
     # -isystem elsewhere, so third-party diagnostics are not promoted. The one known leak
@@ -570,7 +574,8 @@ if ((NOT MSVC OR IS_CLANG_CL) AND ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR 
     # rather than being treated as clean everywhere.
     add_compile_options(-Werror)
 
-    # Not yet at zero. Remove a name once its category is cleared on every compiler.
+    # Demoted: still emitted as a warning. Remove a name once its category is cleared on
+    # every compiler.
     set(werror_exceptions
 
         # macOS only, MacDarkMode.mm. Two calls to AppKit's private titlebarViewController
