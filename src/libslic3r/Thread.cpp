@@ -30,9 +30,8 @@ static HMODULE					s_hKernel32 = nullptr;
 static SetThreadDescriptionType s_fnSetThreadDescription = nullptr;
 static GetThreadDescriptionType	s_fnGetThreadDescription = nullptr;
 
-// GetProcAddress returns FARPROC; retyping it to the real signature is what
-// -Wcast-function-type-mismatch reports. The detour through a generic function
-// pointer marks the retype as intentional.
+// A direct reinterpret_cast<Fn> of the FARPROC warns under
+// -Wcast-function-type-mismatch, so the cast goes through void(*)().
 template<typename Fn> static Fn load_proc(HMODULE module, const char* name) {
 	return reinterpret_cast<Fn>(reinterpret_cast<void(*)()>(::GetProcAddress(module, name)));
 }
