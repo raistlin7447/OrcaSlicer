@@ -573,10 +573,6 @@ if ((NOT MSVC OR IS_CLANG_CL) AND ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR 
     # Not yet at zero. Remove a name once its category is cleared on every compiler.
     set(werror_exceptions
 
-        # Two hidden overloads, Field.hpp:654 and GUI_ObjectTableSettings.hpp:74, with
-        # fixes pending in other people's pull requests.
-        overloaded-virtual
-
         # macOS only, MacDarkMode.mm. Two calls to AppKit's private titlebarViewController
         # and one to a wxWidgets category on NSTableColumn whose declaring header is not
         # imported. Silencing these means declaring the private selectors ourselves, which
