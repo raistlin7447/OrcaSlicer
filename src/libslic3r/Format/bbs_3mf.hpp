@@ -4,6 +4,7 @@
 #include "../GCode/ThumbnailData.hpp"
 #include "libslic3r/ProjectTask.hpp"
 #include "libslic3r/GCode/GCodeProcessor.hpp"
+#include "bbs_3mf_defs.hpp"
 #include <functional>
 
 namespace Slic3r {
@@ -197,32 +198,6 @@ enum {
     brim_points_format_version = 0
 };
 
-enum class LoadStrategy
-{
-    Default = 0,
-    AddDefaultInstances = 1,
-    CheckVersion = 2,
-    LoadModel = 4,
-    LoadConfig = 8,
-    LoadAuxiliary = 16,
-    Silence = 32,
-    ImperialUnits = 64,
-
-    Restore = 0x10000 | LoadModel | LoadConfig | LoadAuxiliary | Silence,
-};
-
-inline LoadStrategy operator | (LoadStrategy lhs, LoadStrategy rhs)
-{
-    using T = std::underlying_type_t <LoadStrategy>;
-    return static_cast<LoadStrategy>(static_cast<T>(lhs) | static_cast<T>(rhs));
-}
-
-inline bool operator & (LoadStrategy & lhs, LoadStrategy rhs)
-{
-    using T = std::underlying_type_t <LoadStrategy>;
-    return (static_cast<T>(lhs) & static_cast<T>(rhs)) == static_cast<T>(rhs);
-}
-
 const int EXPORT_STAGE_OPEN_3MF         = 0;
 const int EXPORT_STAGE_CONTENT_TYPES    = 1;
 const int EXPORT_STAGE_ADD_THUMBNAILS   = 2;
@@ -256,9 +231,6 @@ const int IMPORT_STAGE_MAX              = 13;
 
 //BBS export 3mf progress
 typedef std::function<void(int export_stage, int current, int total, bool& cancel)> Export3mfProgressFn;
-typedef std::function<void(int import_stage, int current, int total, bool& cancel)> Import3mfProgressFn;
-
-typedef std::vector<PlateData*> PlateDataPtrs;
 
 typedef std::map<int, PlateData*> PlateDataMaps;
 
@@ -324,8 +296,6 @@ extern void release_PlateData_list(PlateDataPtrs& plate_data_list);
 
 // backup & restore project
 
-extern void save_object_mesh(ModelObject& object);
-
 extern void delete_object_mesh(ModelObject& object);
 
 extern void backup_soon();
@@ -345,12 +315,6 @@ extern void put_other_changes();
 extern void clear_other_changes(bool backup);
 
 extern bool has_other_changes(bool backup);
-
-class SaveObjectGaurd {
-public:
-    SaveObjectGaurd(ModelObject& object);
-    ~SaveObjectGaurd();
-};
 
 } // namespace Slic3r
 

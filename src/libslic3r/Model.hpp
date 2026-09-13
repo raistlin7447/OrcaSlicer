@@ -6,7 +6,6 @@
 #include "Geometry.hpp"
 #include "ObjectID.hpp"
 #include "Point.hpp"
-#include "AppConfig.hpp"
 #include "PrintConfig.hpp"
 #include "Slicing.hpp"
 #include "SLA/SupportPoint.hpp"
@@ -14,14 +13,13 @@
 #include "BrimEarsPoint.hpp"
 #include "TriangleMesh.hpp"
 #include "CustomGCode.hpp"
-#include "calib.hpp"
 #include "enum_bitmask.hpp"
 #include "TextConfiguration.hpp"
 #include "EmbossShape.hpp"
 #include "TriangleSelector.hpp"
 
 //BBS: add bbs 3mf
-#include "Format/bbs_3mf.hpp"
+#include "Format/bbs_3mf_defs.hpp"
 //BBS: add step
 #include "Format/STEP.hpp"
 //BBS: add stl
@@ -64,6 +62,7 @@ class TriangleSelector;
 //BBS: add Preset
 class Preset;
 class BBLProject;
+class CalibPressureAdvancePattern;
 
 class KeyStore;
 
@@ -1592,14 +1591,14 @@ public:
     }
 
     // Default constructor assigns a new ID to the model.
-    Model() { assert(this->id().valid()); }
+    Model();
     ~Model();
 
     /* To be able to return an object from own copy / clone methods. Hopefully the compiler will do the "Copy elision" */
     /* (Omits copy and move(since C++11) constructors, resulting in zero - copy pass - by - value semantics). */
-    Model(const Model &rhs) : ObjectBase(-1) { assert(this->id().invalid()); this->assign_copy(rhs); assert(this->id().valid()); assert(this->id() == rhs.id()); }
+    Model(const Model &rhs);
     // BBS: remove explicit, prefer use move constructor in function return model
-    Model(Model &&rhs) : ObjectBase(-1) { assert(this->id().invalid()); this->assign_copy(std::move(rhs)); assert(this->id().valid()); assert(this->id() == rhs.id()); }
+    Model(Model &&rhs);
     Model& operator=(const Model &rhs) { this->assign_copy(rhs); assert(this->id().valid()); assert(this->id() == rhs.id()); return *this; }
     Model& operator=(Model &&rhs) { this->assign_copy(std::move(rhs)); assert(this->id().valid()); assert(this->id() == rhs.id()); return *this; }
 
@@ -1728,10 +1727,7 @@ public:
     std::unique_ptr<CalibPressureAdvancePattern> calib_pa_pattern;
 
 private:
-    explicit Model(int) : ObjectBase(-1)
-        {
-        assert(this->id().invalid());
-    }
+    explicit Model(int);
 	void assign_new_unique_ids_recursive();
 	void update_links_bottom_up_recursive();
 

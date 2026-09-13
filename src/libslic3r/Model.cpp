@@ -13,6 +13,7 @@
 #include "TriangleMeshSlicer.hpp"
 #include "TriangleSelector.hpp"
 #include "MaterialType.hpp"
+#include "calib.hpp"
 
 #include "Format/AMF.hpp"
 #include "Format/svg.hpp"
@@ -58,6 +59,15 @@ const std::vector<std::string> CONST_FILAMENTS = {
     // BBS initialization of static variables
     std::map<size_t, ExtruderParams> Model::extruderParamsMap = { {0,{"",0,0}}};
     GlobalSpeedMap Model::printSpeedMap{};
+
+Model::Model() { assert(this->id().valid()); }
+
+Model::Model(const Model &rhs) : ObjectBase(-1) { assert(this->id().invalid()); this->assign_copy(rhs); assert(this->id().valid()); assert(this->id() == rhs.id()); }
+
+Model::Model(Model &&rhs) : ObjectBase(-1) { assert(this->id().invalid()); this->assign_copy(std::move(rhs)); assert(this->id().valid()); assert(this->id() == rhs.id()); }
+
+Model::Model(int) : ObjectBase(-1) { assert(this->id().invalid()); }
+
 Model& Model::assign_copy(const Model &rhs)
 {
     this->copy_id(rhs);
