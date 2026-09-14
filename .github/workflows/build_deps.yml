@@ -142,9 +142,40 @@ jobs:
             $deps = (Split-Path "${{ inputs.cache-path }}").Replace('\', '/')
             # -l compiles with Visual Studio's clang-cl and -x builds with Ninja; --msvc --msbuild is cl under the Visual Studio generator.
             $flags = if ("${{ inputs.compiler }}" -eq "clang") { "-l", "-x" } else { "--msvc", "--msbuild" }
-            # Ninja's cores+2 default runs the 4-core arm64 runner out of memory while python3 links and OCCT compiles.
-            .\build_win.bat -d --arch ${{ inputs.arch }} --deps-dir $deps -j $env:NUMBER_OF_PROCESSORS @flags
+            # --- memory probe (fork experiment, not for the PR) ---
+            Get-CimInstance Win32_ComputerSystem | Select-Object NumberOfLogicalProcessors, @{n='RAM_GB';e={[math]::Round($_.TotalPhysicalMemory/1GB,1)}}, AutomaticManagedPagefile | Format-List | Out-String
+            Get-CimInstance Win32_PageFileSetting | Select-Object Name, InitialSize, MaximumSize | Format-Table | Out-String
+            Get-CimInstance Win32_PageFileUsage | Select-Object Name, AllocatedBaseSize, CurrentUsage, PeakUsage | Format-Table | Out-String
+            $os = Get-CimInstance Win32_OperatingSystem
+            "commit limit GB: $([math]::Round($os.TotalVirtualMemorySize/1MB,2))  committed now GB: $([math]::Round(($os.TotalVirtualMemorySize - $os.FreeVirtualMemory)/1MB,2))"
+            $csv = "$env:RUNNER_TEMP\mem-${{ inputs.arch }}.csv"
+            $job = Start-Job -ArgumentList $csv -ScriptBlock {
+              param($csv)
+              "time,committed_gb,limit_gb,free_phys_gb,top" | Out-File $csv
+              while ($true) {
+                $os = Get-CimInstance Win32_OperatingSystem
+                $committed = [math]::Round(($os.TotalVirtualMemorySize - $os.FreeVirtualMemory)/1MB,2)
+                $limit = [math]::Round($os.TotalVirtualMemorySize/1MB,2)
+                $free = [math]::Round($os.FreePhysicalMemory/1MB,2)
+                $top = (Get-Process | Sort-Object PrivateMemorySize64 -Descending | Select-Object -First 6 | ForEach-Object { "$($_.ProcessName)=$([math]::Round($_.PrivateMemorySize64/1GB,2))" }) -join ' '
+                "$(Get-Date -Format HH:mm:ss),$committed,$limit,$free,$top" | Out-File $csv -Append
+                Start-Sleep 10
+              }
+            }
+            .\build_win.bat -d --arch ${{ inputs.arch }} --deps-dir $deps @flags
+            $rc = $LASTEXITCODE
+            Stop-Job $job; Remove-Job $job -Force
+            "--- top 10 samples by committed memory ---"
+            Import-Csv $csv | Sort-Object { [double]$_.committed_gb } -Descending | Select-Object -First 10 | Format-Table -AutoSize | Out-String -Width 400
+            exit $rc
         shell: pwsh
+
+      - name: Upload memory samples
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: mem-${{ inputs.arch }}
+          path: ${{ runner.temp }}/mem-${{ inputs.arch }}.csv
 
       - name: Build on Mac ${{ inputs.arch }}
         if: runner.os == 'macOS'
