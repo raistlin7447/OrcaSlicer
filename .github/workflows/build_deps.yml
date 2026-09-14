@@ -138,11 +138,11 @@ jobs:
             if (-not "${{ vars.SELF_HOSTED }}") {
               choco install strawberryperl
             }
-            # cache-path is the install directory inside the deps tree.
+            # cache-path is the install directory inside the deps build directory.
             $deps = (Split-Path "${{ inputs.cache-path }}").Replace('\', '/')
-            # -l compiles with Visual Studio's clang-cl, -x builds with Ninja.
-            $flags = if ("${{ inputs.compiler }}" -eq "clang") { "-l", "-x" } else { @() }
-            # One compiler per core: the arm64 runner runs out of memory linking python3 while OCCT compiles beside it.
+            # -l compiles with Visual Studio's clang-cl and -x builds with Ninja; --msvc --msbuild is cl under the Visual Studio generator.
+            $flags = if ("${{ inputs.compiler }}" -eq "clang") { "-l", "-x" } else { "--msvc", "--msbuild" }
+            # Ninja's cores+2 default runs the 4-core arm64 runner out of memory while python3 links and OCCT compiles.
             .\build_win.bat -d --arch ${{ inputs.arch }} --deps-dir $deps -j $env:NUMBER_OF_PROCESSORS @flags
         shell: pwsh
 
