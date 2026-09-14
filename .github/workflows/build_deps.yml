@@ -142,7 +142,8 @@ jobs:
             $deps = (Split-Path "${{ inputs.cache-path }}").Replace('\', '/')
             # -l compiles with Visual Studio's clang-cl, -x builds with Ninja.
             $flags = if ("${{ inputs.compiler }}" -eq "clang") { "-l", "-x" } else { @() }
-            .\build_win.bat -d --arch ${{ inputs.arch }} --deps-dir $deps @flags
+            # One compiler per core: the arm64 runner runs out of memory linking python3 while OCCT compiles beside it.
+            .\build_win.bat -d --arch ${{ inputs.arch }} --deps-dir $deps -j $env:NUMBER_OF_PROCESSORS @flags
         shell: pwsh
 
       - name: Build on Mac ${{ inputs.arch }}
