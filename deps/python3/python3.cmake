@@ -90,11 +90,12 @@ if(WIN32)
 
     # PCbuild/msbuild.rsp carries extra MSBuild switches; build.bat picks it up.
     set(_python_rsp "/p:PlatformToolset=${_python_platform_toolset}\n")
-    # VS 2026's ARM64 linker needs about 27 GB to generate pythoncore's code at
-    # link time, more than the 16 GB CI runner can commit.
+    # VS 2026's ARM64 code generator needs about 27 GB for one function in
+    # Objects/unicodectype.c, more than a 16 GB machine can commit. Drop this
+    # once the compiler is fixed.
     if(_python_pcbuild_platform STREQUAL "ARM64")
-        file(TO_NATIVE_PATH "${CMAKE_CURRENT_LIST_DIR}/no-ltcg.props" _python_no_ltcg_props)
-        string(APPEND _python_rsp "/p:ForceImportAfterCppTargets=\"${_python_no_ltcg_props}\"\n")
+        file(TO_NATIVE_PATH "${CMAKE_CURRENT_LIST_DIR}/arm64-unicodectype.props" _python_arm64_props)
+        string(APPEND _python_rsp "/p:ForceImportAfterCppTargets=\"${_python_arm64_props}\"\n")
     endif()
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/python3-msbuild.rsp" "${_python_rsp}")
     set(_conf_cmd
