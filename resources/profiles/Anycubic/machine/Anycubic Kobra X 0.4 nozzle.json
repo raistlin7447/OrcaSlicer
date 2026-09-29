@@ -14,7 +14,19 @@
 	],
 	"default_print_profile": "0.20mm Standard @Anycubic Kobra X 0.4 nozzle;0.08mm Standard @Anycubic Kobra X 0.4 nozzle",
 	"default_filament_profile": [
-		"Anycubic PLA @Anycubic Kobra X 0.4 nozzle;Anycubic ABS @Anycubic Kobra X 0.4 nozzle;Anycubic ASA @Anycubic Kobra X 0.4 nozzle;Anycubic PETG @Anycubic Kobra X 0.4 nozzle;Anycubic PLA+ @Anycubic Kobra X 0.4 nozzle;Anycubic PLA Glow @Anycubic Kobra X 0.4 nozzle;Anycubic PLA High Speed @Anycubic Kobra X 0.4 nozzle;Anycubic PLA Matte @Anycubic Kobra X 0.4 nozzle;Anycubic PLA Silk @Anycubic Kobra X 0.4 nozzle;Anycubic PVA @Anycubic Kobra X 0.4 nozzle;Anycubic TPU 95A @Anycubic Kobra X 0.4 nozzle;Anycubic TPU for ACE @Anycubic Kobra X 0.4 nozzle;Anycubic Generetic PETG @Anycubic Kobra X 0.4 nozzle"
+		"Anycubic PLA @Anycubic Kobra X 0.4 nozzle",
+		"Anycubic ABS @Anycubic Kobra X 0.4 nozzle",
+		"Anycubic ASA @Anycubic Kobra X 0.4 nozzle",
+		"Anycubic PETG @Anycubic Kobra X 0.4 nozzle",
+		"Anycubic PLA+ @Anycubic Kobra X 0.4 nozzle",
+		"Anycubic PLA Glow @Anycubic Kobra X 0.4 nozzle",
+		"Anycubic PLA High Speed @Anycubic Kobra X 0.4 nozzle",
+		"Anycubic PLA Matte @Anycubic Kobra X 0.4 nozzle",
+		"Anycubic PLA Silk @Anycubic Kobra X 0.4 nozzle",
+		"Anycubic PVA @Anycubic Kobra X 0.4 nozzle",
+		"Anycubic TPU 95A @Anycubic Kobra X 0.4 nozzle",
+		"Anycubic TPU for ACE @Anycubic Kobra X 0.4 nozzle",
+		"Generic PETG @Anycubic Kobra X 0.4 nozzle"
 	],
 	"disable_m73": "0",
 	"gcode_flavor": "klipper",
@@ -73,48 +85,63 @@
 	"machine_end_gcode": "M400\nM140 S0 ; turn off heatbed\nM104 S0 ; turn off temperature\nM107;turn off fan\nM84; disable motors\n; disable stepper motors",
 	"machine_load_filament_time": "0",
 	"machine_max_acceleration_e": [
+		"6500",
 		"6500"
 	],
 	"machine_max_acceleration_extruding": [
+		"6500",
 		"6500"
 	],
 	"machine_max_acceleration_retracting": [
+		"6500",
 		"6500"
 	],
 	"machine_max_acceleration_travel": [
+		"10000",
 		"10000"
 	],
 	"machine_max_acceleration_x": [
+		"10000",
 		"10000"
 	],
 	"machine_max_acceleration_y": [
+		"10000",
 		"10000"
 	],
 	"machine_max_acceleration_z": [
+		"1000",
 		"1000"
 	],
 	"machine_max_jerk_e": [
+		"1",
 		"1"
 	],
 	"machine_max_jerk_x": [
+		"20",
 		"20"
 	],
 	"machine_max_jerk_y": [
+		"20",
 		"20"
 	],
 	"machine_max_jerk_z": [
+		"20",
 		"20"
 	],
 	"machine_max_speed_e": [
+		"250",
 		"250"
 	],
 	"machine_max_speed_x": [
+		"450",
 		"450"
 	],
 	"machine_max_speed_y": [
+		"450",
 		"450"
 	],
 	"machine_max_speed_z": [
+		"12",
 		"12"
 	],
 	"machine_min_extruding_rate": [
@@ -188,7 +215,6 @@
 		"30"
 	],
 	"scan_first_layer": "0",
-	"silent_mode": "1",
 	"single_extruder_multi_material": "1",
 	"support_air_filtration": "0",
 	"support_chamber_temp_control": "0",
