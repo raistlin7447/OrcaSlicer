@@ -102,11 +102,12 @@ Clock::duration cpu_between(std::uint64_t before_ns, std::uint64_t after_ns)
 }
 
 WorkloadResult run_workload(const CatalogEntry& entry, const Policy& policy, const WorkloadKinds& kinds,
-                            const RunContext& context)
+                            const RunContext& context, const ProcessProbe& probe)
 {
     const bool record_passes = policy.metrics.count(Metric::Wall) != 0;
     const bool record_hash   = policy.metrics.count(Metric::Hash) != 0;
     const bool record_work   = policy.metrics.count(Metric::Work) != 0;
+    const bool record_memory = policy.metrics.count(Metric::Rss) != 0;
     const std::string first  = pass_name(1, policy.warmup);
 
     std::string call = "create()";
@@ -136,12 +137,15 @@ WorkloadResult run_workload(const CatalogEntry& entry, const Policy& policy, con
             workload->prepare(context);
 
             call = "execute()";
-            const std::uint64_t     cpu_before = process_cpu_ns();
-            const Clock::time_point started_at = Clock::now();
-            Measurement             measurement(started_at);
+            const bool timed = pass > policy.warmup && record_passes;
+            Sampler    sampler(probe);
+            if (timed)
+                sampler.start();
+            const Reading before = probe();
+            Measurement   measurement(before.at);
             workload->execute(context, measurement);
-            const Clock::duration wall      = Clock::now() - started_at;
-            const std::uint64_t   cpu_after = process_cpu_ns();
+            const Reading        after    = probe();
+            std::vector<Reading> readings = timed ? sampler.stop() : std::vector<Reading>();
 
             const std::optional<std::uint64_t> pass_hash   = record_hash ? measurement.hash() : std::nullopt;
             const std::optional<WorkStats>     pass_work   = record_work ? measurement.work_stats() : std::nullopt;
@@ -158,11 +162,19 @@ WorkloadResult run_workload(const CatalogEntry& entry, const Policy& policy, con
                 return WorkloadResult::failed(entry.name, "the stages of " + name + " differ from " + first);
             }
 
-            if (pass > policy.warmup && record_passes) {
+            if (timed) {
+                readings.push_back(before);
+                readings.push_back(after);
+                std::sort(readings.begin(), readings.end(), [](const Reading& a, const Reading& b) { return a.at < b.at; });
                 IterationResult iteration;
-                iteration.wall       = wall;
-                iteration.cpu        = cpu_between(cpu_before, cpu_after);
-                iteration.timeline   = measurement.timeline();
+                iteration.wall = after.at - before.at;
+                iteration.cpu  = cpu_between(before.cpu_ns, after.cpu_ns);
+                if (record_memory)
+                    iteration.peak_rss_bytes = peak_rss(readings, before.at, after.at);
+                iteration.timeline = measurement.timeline();
+                for (StageSpan& span : iteration.timeline)
+                    for (const auto& [key, value] : sampled_metrics(readings, span.started_at, span.done_at, record_memory))
+                        span.metrics.emplace(key, value);
                 iteration.unfinished = measurement.unfinished_stages();
                 iteration.not_run    = measurement.stages_not_run();
                 iteration.metrics    = measurement.metrics();
@@ -180,7 +192,7 @@ WorkloadResult run_workload(const CatalogEntry& entry, const Policy& policy, con
 } // namespace
 
 Result run_suite(const std::vector<CatalogEntry>& entries, const Policy& policy, const WorkloadKinds& kinds,
-                 RunEnvironment& environment)
+                 RunEnvironment& environment, const ProcessProbe& probe)
 {
     std::set<std::string> names;
     for (const CatalogEntry& entry : entries) {
@@ -202,7 +214,7 @@ Result run_suite(const std::vector<CatalogEntry>& entries, const Policy& policy,
         const EnvironmentScope scope(environment, policy);
         for (const CatalogEntry& entry : entries)
             if (!policy.pgo_eligible_only || is_pgo_eligible(entry))
-                result.workloads.push_back(run_workload(entry, policy, kinds, context));
+                result.workloads.push_back(run_workload(entry, policy, kinds, context, probe));
     }
     result.suite.duration = Clock::now() - started_at;
     return result;

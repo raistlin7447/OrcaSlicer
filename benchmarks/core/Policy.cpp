@@ -1,5 +1,6 @@
 #include "core/Policy.hpp"
 
+#include "core/Sampler.hpp"
 #include "core/Text.hpp"
 
 #include <algorithm>
@@ -145,7 +146,8 @@ MeasurementIdentity Policy::identity() const
             {MeasurementKey::stages, to_string(timed_stages)},
             {MeasurementKey::metrics, to_string(collected_metrics)},
             {MeasurementKey::corpus, fixture_providers},
-            {MeasurementKey::affinity, no_affinity}};
+            {MeasurementKey::affinity, no_affinity},
+            {MeasurementKey::sampling, std::to_string(sampling_interval.count()) + "ms"}};
 }
 
 }} // namespace Slic3r::Bench
