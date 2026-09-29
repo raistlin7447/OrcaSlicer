@@ -123,8 +123,8 @@ struct IterationResult
 // neither.
 Clock::time_point origin(const IterationResult& iteration);
 
-// Skipped means a fixture was missing and Failed means the workload threw, and neither counts
-// as a pass.
+// Skipped means a fixture was missing and Failed means the workload threw or the Runner refused
+// what it reported, and neither counts as a pass.
 enum class Outcome { Ran, Skipped, Failed };
 
 struct WorkloadResult

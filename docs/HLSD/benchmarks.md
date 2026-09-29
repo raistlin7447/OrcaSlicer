@@ -34,9 +34,9 @@ architecture in place of a CPU model, and to `"unknown"` only when nothing coars
 
 `Result.hpp` describes a run: the suite's start time and duration, what the run asked for, the
 build and the machine, and one entry per workload. A workload ran, was skipped because a fixture
-was missing, or failed because it threw, and the last two have a reason. Neither counts as a
-pass, and the outcome counts are computed from the list whenever asked, never stored, so no total
-can disagree with it.
+was missing, or failed because it threw or the Runner refused what it reported, and the last two
+have a reason. Neither counts as a pass, and the outcome counts are computed from the list
+whenever asked, never stored, so no total can disagree with it.
 
 A field is typed when every result has it, such as a span's stage and times or an iteration's
 wall time and CPU time. Peak memory, the work stats and the output hash are optional, since a run
@@ -100,12 +100,13 @@ exception from any of them fails the workload. `RunContext` tells a workload whi
 time, and whatever a timed stage needs runs untimed in `prepare()`.
 
 A workload reports through `Measurement`. It takes spans with their stage, `Scope` (the whole
-print or one object) and times, each with its own metrics, then metrics of the whole iteration,
-and the work stats and the output hash once each. The tests' fake writes through the same type,
-so nothing between a workload and its result depends on slicing. A span that ends before it
-starts, a number that is not finite and a metric reported twice are refused where they are
-reported, so one bad value fails only its own workload and never reaches the document writer,
-which would refuse the whole result.
+print or one object) and times, each with its own metrics, the steps that never finished and the
+timed ones that never started, then metrics of the whole iteration, and the work stats and the
+output hash once each. The tests' fake writes through the same type, so nothing between a workload
+and its result depends on slicing. A span that ends before it starts, a stage reported twice for
+one scope in any of the three forms, a number that is not finite and a metric reported twice are
+refused where they are reported, so one bad value fails only its own workload and never reaches
+the document writer, which would refuse the whole result.
 
 `WorkloadKinds` maps kind names to the factories that build a workload from its entry. A kind
 adds itself from its own file through a `WorkloadKindRegistrar`, and the kinds compile into
@@ -120,6 +121,38 @@ else.
 text, prints the catalog's workloads with `--list`, and prints the usage for `--help`, even beside
 `--list`. An argument it does not know exits 2 with the usage, and any other error exits 1
 without it.
+
+## The Runner
+
+`run_suite()` in `Runner.cpp` takes the catalog entries a run selected, the resolved policy, the
+registry and a `RunEnvironment`, and returns the `Result`. The environment is what a run sets up
+around all its workloads, such as the thread cap, the locale, `resources_dir()`, the temporary
+directory and logging. Those are libslic3r and TBB calls, so core only declares the interface and
+the code that links libslic3r implements it. The Runner enters it once before the first workload
+and leaves it after the last. A run ends before any workload starts when an entry name is one
+`validate()` refuses or one that repeats, since results are keyed by name, or when the environment
+fails to enter.
+
+Each workload is built, set up once, then prepared and executed for every warmup and timed pass.
+Under `pgo`, an entry that may not train is left out of the run, the same as one the selection
+never named. Nothing a workload throws leaves the Runner. The workload fails with a reason that
+names the call and the pass, such as `execute() threw on timed pass 2: bad allocation`, and the
+next one runs. An empty reason to skip fails the workload as well, since the document cannot hold
+a skip without a reason.
+
+Only `execute()` is timed, with its wall time and the process's CPU time taken around it. The
+Runner builds each pass's `Measurement` with the time `execute()` starts, and a span that starts
+before it, or ends after it is reported, is refused. A workload that reuses state from an earlier
+pass therefore fails, and every recorded span lies inside its iteration.
+
+Every pass, warmups included, must reproduce the first pass's output hash and work stats, since a
+result holds one of each, and a pass that differs fails the workload. The hash therefore leaves out
+whatever varies between runs of the same input, such as the time the G-code header records. Every
+pass must also agree on which stages finished, stayed unfinished or never ran, in whatever order it
+reports them, so no stage's row mixes states. A result keeps the hash and the work stats only when
+the policy collects them, and a timed pass becomes an iteration only when wall time is collected,
+so `verify` records its hash and no iterations. The Runner does not record peak memory, since the
+process's high-water mark would give every later iteration an earlier workload's maximum.
 
 ## Build identity
 
