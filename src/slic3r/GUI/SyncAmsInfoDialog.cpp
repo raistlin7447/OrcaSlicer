@@ -678,7 +678,7 @@ SyncAmsInfoDialog::SyncAmsInfoDialog(wxWindow *parent, SyncInfo &info) :
 
         wxBoxSizer *loading_Sizer = new wxBoxSizer(wxHORIZONTAL);
         m_gif_ctrl = new wxAnimationCtrl(m_loading_page, wxID_ANY, wxNullAnimation, wxDefaultPosition, wxDefaultSize, wxAC_DEFAULT_STYLE);
-        auto gif_path = Slic3r::var("loading.gif").c_str();
+        const wxString gif_path = from_u8(Slic3r::var("loading.gif"));
         if (m_gif_ctrl->LoadFile(gif_path)){
             m_gif_ctrl->SetSize(m_gif_ctrl->GetAnimation().GetSize());
             m_gif_ctrl->Play();
@@ -700,7 +700,7 @@ SyncAmsInfoDialog::SyncAmsInfoDialog(wxWindow *parent, SyncInfo &info) :
     //wxBoxSizer *m_scroll_sizer = new wxBoxSizer(wxVERTICAL);
     m_scrolledWindow = new wxScrolledWindow(m_show_page, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxVSCROLL);
     m_scrolledWindow->SetBackgroundColour(*wxWHITE);
-    m_scrolledWindow->SetScrollRate(0, 20);
+    m_scrolledWindow->SetScrollRate(0, FromDIP(20));
     m_scrolledWindow->SetMinSize(wxSize(-1, SyncAmsInfoDialogHeightMAX));
     m_scrolledWindow->SetMaxSize(wxSize(-1, SyncAmsInfoDialogHeightMAX));
     m_scrolledWindow->EnableScrolling(false,true);
@@ -1516,6 +1516,8 @@ bool SyncAmsInfoDialog::is_nozzle_type_match(DevExtderSystem data, wxString &err
                 used_extruders_flow[used_extruders[i]] = "Standard";
             } else if (nozzle_volume_type == NozzleVolumeType::nvtTPUHighFlow) {
                 used_extruders_flow[used_extruders[i]] = "TPU High Flow";
+            } else if (nozzle_volume_type == NozzleVolumeType::nvtE3DHighFlow) {
+                used_extruders_flow[used_extruders[i]] = "E3D High Flow";
             } else {
                 used_extruders_flow[used_extruders[i]] = "High Flow";
             }
@@ -1533,6 +1535,8 @@ bool SyncAmsInfoDialog::is_nozzle_type_match(DevExtderSystem data, wxString &err
             flow_type_of_machine.push_back("Standard");
         } else if (it->GetNozzleFlowType() == NozzleFlowType::U_FLOW) {
             flow_type_of_machine.push_back("TPU High Flow");
+        } else if (it->GetNozzleFlowType() == NozzleFlowType::E_FLOW) {
+            flow_type_of_machine.push_back("E3D High Flow");
         }
     }
 
@@ -1547,7 +1551,7 @@ bool SyncAmsInfoDialog::is_nozzle_type_match(DevExtderSystem data, wxString &err
                     auto sai_nz_pt = wxGetApp().preset_bundle->printers.get_edited_preset().get_printer_type(wxGetApp().preset_bundle);
                     if (target_machine_nozzle_id == DEPUTY_EXTRUDER_ID) {
                         pos = _L(DevPrinterConfigUtil::get_toolhead_display_name(sai_nz_pt, DEPUTY_EXTRUDER_ID, ToolHeadComponent::Nozzle, ToolHeadNameCase::LowerCase));
-                    } else if ((target_machine_nozzle_id == MAIN_EXTRUDER_ID)) {
+                    } else if (target_machine_nozzle_id == MAIN_EXTRUDER_ID) {
                         pos = _L(DevPrinterConfigUtil::get_toolhead_display_name(sai_nz_pt, MAIN_EXTRUDER_ID, ToolHeadComponent::Nozzle, ToolHeadNameCase::LowerCase));
                     }
 
