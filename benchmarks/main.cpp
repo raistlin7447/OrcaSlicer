@@ -19,8 +19,11 @@ int main(int argc, char** argv)
         }
         std::cout << usage();
         return 0;
-    } catch (const std::exception& error) {
+    } catch (const OptionsError& error) {
         std::cerr << "orca_bench: " << error.what() << "\n" << usage();
         return 2;
+    } catch (const std::exception& error) {
+        std::cerr << "orca_bench: " << error.what() << "\n";
+        return 1;
     }
 }

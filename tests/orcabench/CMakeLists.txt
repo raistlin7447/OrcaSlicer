@@ -39,3 +39,11 @@ add_test(NAME orca_bench_prints_the_usage_for_help_beside_list
                  "-DOUTPUT=usage: orca_bench" -P ${_run_orca_bench})
 set_tests_properties(orca_bench_lists_the_catalog orca_bench_refuses_an_unknown_argument
                      orca_bench_prints_the_usage_for_help_beside_list PROPERTIES LABELS RequiresApp)
+
+# GitCommitHash.cmake lives outside build/tests too, and git may be missing where tests run.
+add_test(NAME git_commit_hash_counts_an_untracked_kind
+         COMMAND ${CMAKE_COMMAND} -DSCRIPT=${CMAKE_SOURCE_DIR}/cmake/modules/GitCommitHash.cmake
+                 -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/git_commit_hash_probe
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/test_git_commit_hash.cmake)
+set_tests_properties(git_commit_hash_counts_an_untracked_kind PROPERTIES LABELS RequiresApp
+                     SKIP_REGULAR_EXPRESSION "SKIP: ")

@@ -10,9 +10,9 @@ change that makes slicing slower shows up along with the step that got slower.
 
 `benchmarks/` builds `orcabench_core`, a static library that never links libslic3r, and the
 `orca_bench` command line on top of it, so both and the tests in `tests/orcabench` build without
-the slicer. It is built when
-`ORCA_BENCHMARKS` is on, which follows `BUILD_TESTS` by default, so every test build compiles it
-and runs its suite. Turning the option off removes it.
+the slicer. It is built when `ORCA_BENCHMARKS` is on, which defaults to `BUILD_TESTS` in a new build
+directory and which the build scripts turn on with the tests, so their test builds compile it and
+run its suite. Turning the option off removes it.
 
 ## Step timestamps
 
@@ -114,7 +114,8 @@ else.
 
 `orca_bench` reads its arguments with a parser that shares one table of flags with the usage
 text, prints the catalog's workloads with `--list`, and prints the usage for `--help`, even beside
-`--list`.
+`--list`. An argument it does not know exits 2 with the usage, and any other error exits 1
+without it.
 
 ## The Runner
 
@@ -148,11 +149,12 @@ workload's maximum.
 
 `BuildId.cpp` reports the commit and whether the working copy was dirty, read from
 `git_commit_hash.h`, which `cmake/modules/GitCommitHash.cmake` rewrites at the start of every build
-for the slicer and the benchmarks alike. The compiler, its version, the configuration and the
-flags are read from a header CMake generates per configuration. The flags are `CMAKE_CXX_FLAGS`, the
-configuration's own, and the `add_compile_options` the directory inherits, so a cache option such
-as `SLIC3R_ASAN` shows up in them. `BuildId.cpp` is the only file in `benchmarks/` that includes
-either generated header, so a new commit recompiles one file there.
+for the slicer and the benchmarks alike. Dirty means a tracked file changed or, since `orca_bench`
+compiles its kinds by glob, a kind exists that git does not track yet. The compiler, its version,
+the configuration and the flags are read from a header CMake generates per configuration. The
+flags are `CMAKE_CXX_FLAGS`, the configuration's own, and the `add_compile_options` the directory
+inherits, so a cache option such as `SLIC3R_ASAN` shows up in them. `BuildId.cpp` is the only file
+in `benchmarks/` that includes either generated header, so a new commit recompiles one file there.
 
 ## The result document
 
