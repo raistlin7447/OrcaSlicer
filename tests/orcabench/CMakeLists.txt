@@ -8,6 +8,7 @@ add_executable(${_TEST_NAME}_tests
     test_options.cpp
     test_policy.cpp
     test_result.cpp
+    test_runner.cpp
     test_workload.cpp
     )
 
