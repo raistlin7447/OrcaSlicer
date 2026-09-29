@@ -1,5 +1,7 @@
 #include "core/Measurement.hpp"
 
+#include "core/Sampler.hpp"
+
 #include <cmath>
 #include <stdexcept>
 #include <utility>
@@ -37,6 +39,9 @@ void Measurement::span(std::string stage, const Scope& scope, Clock::time_point 
         throw std::invalid_argument("the " + stage + " span starts before its iteration");
     if (done_at > Clock::now())
         throw std::invalid_argument("the " + stage + " span ends after it is reported");
+    for (const char* key : SampledMetric::all)
+        if (metrics.count(key) != 0)
+            throw std::invalid_argument("the " + stage + " span reports " + key + ", which the sampler writes");
     require_finite(metrics);
     m_timeline.push_back({std::move(stage), scope.text(), started_at, done_at, std::move(metrics)});
 }

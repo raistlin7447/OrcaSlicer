@@ -35,7 +35,8 @@ public:
     explicit Measurement(Clock::time_point iteration_start) : m_iteration_start(iteration_start) {}
 
     // Throws std::invalid_argument for a span without a stage, one that ends before it starts, starts
-    // before its iteration or ends after it is reported, or a metric that is not finite.
+    // before its iteration or ends after it is reported, or a metric that is not finite or that the
+    // sampler writes.
     void span(std::string stage, const Scope& scope, Clock::time_point started_at, Clock::time_point done_at,
               Metrics metrics = {});
 

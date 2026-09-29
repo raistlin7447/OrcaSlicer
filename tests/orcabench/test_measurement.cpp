@@ -1,6 +1,7 @@
 #include <catch2/catch_all.hpp>
 
 #include "core/Measurement.hpp"
+#include "core/Sampler.hpp"
 
 #include <chrono>
 #include <limits>
@@ -13,15 +14,15 @@ TEST_CASE("a span keeps what the workload reported", "[OrcaBench][Measurement]")
 {
     const Clock::time_point start = Clock::time_point {} + 1s;
     Measurement measurement(Clock::time_point {});
-    measurement.span("posSlice", Scope::object(2), start, start + 5ms, {{"peak_rss_bytes", 1024.0}});
+    measurement.span("posSlice", Scope::object(2), start, start + 5ms, {{"layers", 1024.0}});
     REQUIRE(measurement.timeline().size() == 1);
     const StageSpan& span = measurement.timeline().front();
     CHECK(span.stage == "posSlice");
     CHECK(span.scope == "object:2");
     CHECK(span.started_at == start);
     CHECK(span.done_at == start + 5ms);
-    REQUIRE(span.metrics.count("peak_rss_bytes") == 1);
-    CHECK_THAT(span.metrics.at("peak_rss_bytes"), Catch::Matchers::WithinAbs(1024.0, 0.0));
+    REQUIRE(span.metrics.count("layers") == 1);
+    CHECK_THAT(span.metrics.at("layers"), Catch::Matchers::WithinAbs(1024.0, 0.0));
 }
 
 TEST_CASE("a span that ends before it starts is refused", "[OrcaBench][Measurement]")
@@ -35,6 +36,16 @@ TEST_CASE("a span without a stage is refused", "[OrcaBench][Measurement]")
 {
     Measurement measurement(Clock::time_point {});
     CHECK_THROWS_AS(measurement.span("", Scope::print(), Clock::time_point {}, Clock::time_point {}), std::invalid_argument);
+}
+
+TEST_CASE("a span metric under a key the sampler writes is refused", "[OrcaBench][Measurement]")
+{
+    const std::string key =
+        GENERATE(as<std::string> {}, SampledMetric::peak_rss_bytes, SampledMetric::cpu_ns, SampledMetric::cpu_window_ns);
+    CAPTURE(key);
+    Measurement measurement(Clock::time_point {});
+    CHECK_THROWS_AS(measurement.span("posSlice", Scope::print(), Clock::time_point {}, Clock::time_point {}, {{key, 1.0}}),
+                    std::invalid_argument);
 }
 
 TEST_CASE("a span that starts before its iteration is refused", "[OrcaBench][Measurement]")
@@ -71,7 +82,7 @@ TEST_CASE("a number that is not finite is refused where it is reported", "[OrcaB
     CAPTURE(value);
 
     Measurement span_metric(Clock::time_point {});
-    CHECK_THROWS_AS(span_metric.span("posSlice", Scope::print(), Clock::time_point {}, Clock::time_point {}, {{"peak_rss_bytes", value}}),
+    CHECK_THROWS_AS(span_metric.span("posSlice", Scope::print(), Clock::time_point {}, Clock::time_point {}, {{"layers", value}}),
                     std::invalid_argument);
 
     Measurement iteration_metric(Clock::time_point {});

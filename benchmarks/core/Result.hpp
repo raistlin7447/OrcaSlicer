@@ -54,6 +54,7 @@ inline constexpr const char* stages     = "stages";
 inline constexpr const char* metrics    = "metrics";
 inline constexpr const char* corpus     = "corpus";
 inline constexpr const char* affinity   = "affinity";
+inline constexpr const char* sampling   = "sampling";
 } // namespace MeasurementKey
 
 // What built the code, which may differ between two comparable results.

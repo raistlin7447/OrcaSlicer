@@ -12,6 +12,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace Slic3r::Bench;
@@ -42,6 +43,14 @@ WorkloadKinds fake_kinds(const FakeHooks& hooks, std::vector<std::string>& calls
 
 // One warmup and three timed passes, collecting everything.
 Policy quick() { return Policy::resolve("quick", {}, 1); }
+
+// quick without its warmup, so every pass is timed and sampled.
+Policy sampled_quick()
+{
+    PolicyOverrides overrides;
+    overrides.warmup = 0;
+    return Policy::resolve("quick", overrides, 1);
+}
 
 // Reports a span at least one clock tick long, the pass as a metric, and the same output on every
 // pass.
@@ -367,4 +376,97 @@ TEST_CASE("the result records the policy's identity, this build and this machine
     CHECK(result.suite.started_at <= after);
     CHECK(result.suite.duration <= elapsed);
     CHECK(result.workloads.empty());
+}
+
+TEST_CASE("a timed pass records its sampled peak memory and each span's sampled readings", "[OrcaBench][Runner]")
+{
+    ScriptedProcess process;
+    process.rate      = 3;
+    process.rss_bytes = 100;
+    FakeHooks hooks;
+    hooks.execute = [&process](unsigned, Measurement& measurement) {
+        // Three more reads leave at least two taken wholly inside each span.
+        process.rss_bytes              = 500;
+        const Clock::time_point infill = Clock::now();
+        process.await(3);
+        measurement.span("posInfill", Scope::print(), infill, Clock::now());
+        process.rss_bytes                  = 700;
+        const Clock::time_point perimeters = Clock::now();
+        process.await(3);
+        measurement.span("posPerimeters", Scope::print(), perimeters, Clock::now());
+        process.rss_bytes = 200;
+    };
+    std::vector<std::string> calls;
+    FakeEnvironment          environment(calls);
+    const Result result = run_suite({entry_of("fake/cube")}, sampled_quick(), fake_kinds(hooks, calls), environment, process.probe());
+
+    REQUIRE(result.workloads.size() == 1);
+    REQUIRE(result.workloads.front().outcome == Outcome::Ran);
+    const std::vector<IterationResult>& iterations = result.workloads.front().iterations;
+    REQUIRE(iterations.size() == 3);
+    for (const IterationResult& iteration : iterations) {
+        CHECK(iteration.peak_rss_bytes == std::optional<std::uint64_t>(700));
+        CHECK(iteration.cpu == 3 * iteration.wall);
+        REQUIRE(iteration.timeline.size() == 2);
+        const double peaks[] = {500.0, 700.0};
+        for (std::size_t i = 0; i < 2; ++i) {
+            const Metrics& metrics = iteration.timeline[i].metrics;
+            CHECK_THAT(metrics.at(SampledMetric::peak_rss_bytes), Catch::Matchers::WithinAbs(peaks[i], 0.0));
+            CHECK_THAT(metrics.at(SampledMetric::cpu_ns), Catch::Matchers::WithinAbs(3 * metrics.at(SampledMetric::cpu_window_ns), 0.0));
+        }
+    }
+}
+
+TEST_CASE("a run that does not collect memory still records each span's sampled CPU", "[OrcaBench][Runner]")
+{
+    ScriptedProcess process;
+    process.rate = 2;
+    FakeHooks hooks;
+    hooks.execute = [&process](unsigned, Measurement& measurement) {
+        const Clock::time_point infill = Clock::now();
+        process.await(3);
+        measurement.span("posInfill", Scope::print(), infill, Clock::now());
+    };
+    Policy policy = sampled_quick();
+    policy.metrics.erase(Metric::Rss);
+    std::vector<std::string> calls;
+    FakeEnvironment          environment(calls);
+    const Result result = run_suite({entry_of("fake/cube")}, policy, fake_kinds(hooks, calls), environment, process.probe());
+
+    REQUIRE(result.workloads.size() == 1);
+    REQUIRE(result.workloads.front().outcome == Outcome::Ran);
+    for (const IterationResult& iteration : result.workloads.front().iterations) {
+        CHECK_FALSE(iteration.peak_rss_bytes.has_value());
+        REQUIRE(iteration.timeline.size() == 1);
+        const Metrics& metrics = iteration.timeline.front().metrics;
+        CHECK(metrics.count(SampledMetric::peak_rss_bytes) == 0);
+        CHECK_THAT(metrics.at(SampledMetric::cpu_ns), Catch::Matchers::WithinAbs(2 * metrics.at(SampledMetric::cpu_window_ns), 0.0));
+    }
+}
+
+TEST_CASE("a warmup pass and a run that records no timing are not sampled", "[OrcaBench][Runner]")
+{
+    ScriptedProcess          process;
+    std::vector<std::string> calls;
+    FakeEnvironment          environment(calls);
+
+    SECTION("a warmup pass")
+    {
+        bool      unsampled = false;
+        FakeHooks hooks;
+        hooks.execute = [&process, &unsampled](unsigned pass, Measurement&) {
+            if (pass != 1)
+                return;
+            const std::uint64_t before = process.reads;
+            std::this_thread::sleep_for(10 * sampling_interval);
+            unsampled = process.reads == before;
+        };
+        run_suite({entry_of("fake/cube")}, quick(), fake_kinds(hooks, calls), environment, process.probe());
+        CHECK(unsampled);
+    }
+    SECTION("verify, which reads only at its one pass's two ends")
+    {
+        run_suite({entry_of("fake/cube")}, Policy::resolve("verify", {}, 1), fake_kinds({}, calls), environment, process.probe());
+        CHECK(process.reads == 2);
+    }
 }

@@ -90,7 +90,8 @@ Result sample()
                           {MeasurementKey::stages, "process,export"},
                           {MeasurementKey::metrics, "wall,rss,hash,work"},
                           {MeasurementKey::corpus, "embedded,handy"},
-                          {MeasurementKey::affinity, "none"}};
+                          {MeasurementKey::affinity, "none"},
+                          {MeasurementKey::sampling, "5ms"}};
 
     result.build.revision         = "a83e6b7b74";
     result.build.dirty            = true;
