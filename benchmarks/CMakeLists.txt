@@ -2,8 +2,11 @@ add_library(orcabench_core STATIC
     core/BuildId.cpp
     core/Document.cpp
     core/Host.cpp
+    core/Measurement.cpp
+    core/Options.cpp
     core/Policy.cpp
     core/Result.cpp
+    core/Workload.cpp
     )
 
 target_include_directories(orcabench_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -46,3 +49,10 @@ if (WIN32)
 endif ()
 
 set_property(TARGET orcabench_core PROPERTY FOLDER "benchmarks")
+
+# Kinds add themselves to the registry during static initialization, so they compile into the
+# executable itself, since a static library's linker would drop registrars nothing references.
+file(GLOB _orcabench_kinds CONFIGURE_DEPENDS kinds/*.cpp)
+add_executable(orca_bench main.cpp ${_orcabench_kinds})
+target_link_libraries(orca_bench PRIVATE orcabench_core)
+set_property(TARGET orca_bench PROPERTY FOLDER "benchmarks")
