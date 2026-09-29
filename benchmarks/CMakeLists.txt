@@ -2,6 +2,7 @@ add_library(orcabench_core STATIC
     core/BuildId.cpp
     core/Document.cpp
     core/Host.cpp
+    core/Policy.cpp
     core/Result.cpp
     )
 

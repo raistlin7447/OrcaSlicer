@@ -1,4 +1,5 @@
 #include "Host.hpp"
+#include "Text.hpp"
 
 #include <thread>
 
@@ -26,13 +27,6 @@ namespace {
 // What a query returns when nothing coarser is available either, so a reader can tell it from a
 // field nobody set.
 constexpr const char* unknown = "unknown";
-
-// Strips the spaces some platforms pad a processor brand string with.
-std::string trimmed(const std::string& text)
-{
-    const auto first = text.find_first_not_of(" \t");
-    return first == std::string::npos ? std::string() : text.substr(first, text.find_last_not_of(" \t") - first + 1);
-}
 
 #ifdef _WIN32
 // The processor family, the coarser answer when the registry has no model name.
