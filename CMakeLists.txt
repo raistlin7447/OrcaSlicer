@@ -293,7 +293,8 @@ endif ()
 option(SLIC3R_BUILD_SANDBOXES   "Build development sandboxes" OFF)
 option(BUILD_TESTS       "Build unit tests" OFF)
 option(ORCA_TOOLS       "Build Orca tools" OFF)
-# Follows BUILD_TESTS by default, so every test build, CI's included, compiles and tests the framework.
+# Defaults to BUILD_TESTS in a new build directory, and the build scripts turn it on with the tests, so
+# the test builds they make, CI's included, compile and test the framework.
 option(ORCA_BENCHMARKS   "Build the slicing benchmark framework" ${BUILD_TESTS})
 
 if (FLATPAK)
