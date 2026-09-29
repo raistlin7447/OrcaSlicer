@@ -961,7 +961,7 @@ CopyFileResult copy_file(const std::string &from, const std::string &to, std::st
     BOOL result = CopyFileW(src_wstr, dst_wstr, FALSE);
     if (!result) {
         DWORD errCode = GetLastError();
-        error_message = "Error: " + errCode;
+        error_message = "Error: " + std::to_string(errCode);
         ret = FAIL_COPY_FILE;
         goto __finished;
     }
@@ -1086,6 +1086,30 @@ bool is_gcode_file(const std::string &path)
 bool is_json_file(const std::string& path)
 {
 	return boost::iends_with(path, ".json");
+}
+
+bool is_path_within_root(const std::string &rel_path, const boost::filesystem::path &root)
+{
+    auto is_separator = [](char c) { return c == '/' || c == '\\'; };
+    if (rel_path.empty() || is_separator(rel_path.front()) || (rel_path.size() > 1 && rel_path[1] == ':'))
+        return false;
+    for (size_t start = 0; start <= rel_path.size();) {
+        size_t end = start;
+        while (end < rel_path.size() && !is_separator(rel_path[end]))
+            ++end;
+        if (rel_path.compare(start, end - start, "..") == 0)
+            return false;
+        start = end + 1;
+    }
+    // Resolve against the canonical root so a symlink inside it cannot lead back out.
+    try {
+        const std::string root_str = boost::filesystem::weakly_canonical(root).string();
+        const std::string full_str = boost::filesystem::weakly_canonical(root / rel_path).string();
+        return full_str.compare(0, root_str.size(), root_str) == 0 &&
+               (full_str.size() == root_str.size() || full_str[root_str.size()] == boost::filesystem::path::preferred_separator);
+    } catch (const boost::filesystem::filesystem_error &) {
+        return false;
+    }
 }
 
 bool is_img_file(const std::string &path)
@@ -1297,6 +1321,31 @@ unsigned get_current_pid()
 #endif
 }
 
+boost::filesystem::path download_marker_path(const boost::filesystem::path &dest_folder, const std::string &filename)
+{
+    return dest_folder / (filename + "." + std::to_string(get_current_pid()) + ".download");
+}
+
+bool find_unused_filename(const boost::filesystem::path &dest_folder, const std::string &filename,
+                          const boost::filesystem::path &ignored_marker, std::string &result)
+{
+    // Probe the name that will be written, so a name the sanitizing maps onto an existing file is versioned too.
+    const std::string sanitized = sanitize_filename(filename);
+    const std::string extension = boost::filesystem::path(sanitized).extension().string();
+    const std::string stem      = sanitized.substr(0, sanitized.size() - extension.size());
+    auto is_used = [&](const std::string &name) {
+        const boost::filesystem::path marker = download_marker_path(dest_folder, name);
+        return boost::filesystem::exists(dest_folder / name) || (marker != ignored_marker && boost::filesystem::exists(marker));
+    };
+    result = sanitized;
+    for (size_t version = 1; is_used(result); ++version) {
+        if (version > 999)
+            return false;
+        result = stem + "(" + std::to_string(version) + ")" + extension;
+    }
+    return true;
+}
+
 std::string per_user_temp_id()
 {
 #ifdef WIN32
@@ -1313,6 +1362,19 @@ std::string per_user_temp_dir(const std::string &base, const std::string &user_i
     // Keep the id at the top level so each user's dir sits directly in the world-writable temp
     // root; a shared parent dir would be owned by whichever user created it first.
     return base + "/orcaslicer_" + user_id;
+}
+
+std::string resolve_cli_input_path(const std::string &path)
+{
+    const boost::filesystem::path input(path);
+    if (path.empty() || is_supported_open_protocol(path) || input.is_absolute())
+        return path;
+
+    boost::system::error_code ec;
+    const boost::filesystem::path resolved = boost::filesystem::system_complete(input, ec);
+    if (ec)
+        return path;
+    return resolved.lexically_normal().make_preferred().string();
 }
 
 // BBS: backup & restore

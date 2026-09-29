@@ -23,6 +23,7 @@
 
 #include "libslic3r/Geometry/ConvexHull.hpp"
 
+#include <algorithm>
 #include <float.h>
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -108,6 +109,8 @@ Model& Model::assign_copy(const Model &rhs)
     this->md_value = rhs.md_value;
     this->texture_mesh = rhs.texture_mesh;
 
+    this->cad_recipe = rhs.cad_recipe;
+
     return *this;
 }
 
@@ -152,6 +155,7 @@ Model& Model::assign_copy(Model &&rhs)
     rhs.model_info.reset();
     this->profile_info = rhs.profile_info;
     rhs.profile_info.reset();
+    this->cad_recipe = std::move(rhs.cad_recipe);
     return *this;
 }
 
@@ -1226,6 +1230,7 @@ ModelObject& ModelObject::assign_copy(const ModelObject &rhs)
         this->volumes.emplace_back(new ModelVolume(*model_volume));
         this->volumes.back()->set_model_object(this);
     }
+
     this->clear_instances();
 	this->instances.reserve(rhs.instances.size());
     for (const ModelInstance *model_instance : rhs.instances) {
@@ -1264,6 +1269,7 @@ ModelObject& ModelObject::assign_copy(ModelObject &&rhs)
 	rhs.volumes.clear();
     for (ModelVolume *model_volume : this->volumes)
         model_volume->set_model_object(this);
+
     this->clear_instances();
 	this->instances = std::move(rhs.instances);
 	rhs.instances.clear();
@@ -1387,7 +1393,9 @@ ModelVolume* ModelObject::add_volume_with_shared_mesh(const ModelVolume &other, 
 void ModelObject::delete_volume(size_t idx)
 {
     ModelVolumePtrs::iterator i = this->volumes.begin() + idx;
-    delete *i;
+    ModelVolume* volume_to_delete = *i;
+
+    delete volume_to_delete;
     this->volumes.erase(i);
 
     if (this->volumes.size() == 1)
@@ -1446,6 +1454,20 @@ void ModelObject::sort_volumes(bool full_sort)
     // sort volumes inside the object to order "Model Part, Negative Volume, Modifier, Support Blocker and Support Enforcer. "
     if (full_sort)
         std::stable_sort(volumes.begin(), volumes.end(), [](ModelVolume* vl, ModelVolume* vr) {
+            // Special handling for Precise Seam modifiers: group-based sorting with user order preservation
+            if (vl->is_precise_seam() && vr->is_precise_seam()) {
+                // Strong (center/left/right) always before weak (enforced/blocked/neutral)
+                bool vl_strong = vl->is_precise_seam_strong();
+                bool vr_strong = vr->is_precise_seam_strong();
+                if (vl_strong != vr_strong)
+                    return vl_strong; // strong < weak → strong group appears first
+
+                // Within same group (both strong or both weak): preserve current order
+                // stable_sort will maintain relative positions when comparator returns false
+                return false;
+            }
+
+            // For non-Precise-Seam or mixed types: use standard enum-based ordering
             return vl->type() < vr->type();
         });
     // sort have to controll "place" of the support blockers/enforcers. But one of the model parts have to be on the first place.
@@ -1453,10 +1475,19 @@ void ModelObject::sort_volumes(bool full_sort)
         std::stable_sort(volumes.begin(), volumes.end(), [](ModelVolume* vl, ModelVolume* vr) {
             ModelVolumeType vl_type = vl->type() > ModelVolumeType::PARAMETER_MODIFIER ? vl->type() : ModelVolumeType::PARAMETER_MODIFIER;
             ModelVolumeType vr_type = vr->type() > ModelVolumeType::PARAMETER_MODIFIER ? vr->type() : ModelVolumeType::PARAMETER_MODIFIER;
+
+            // Apply same Precise Seam grouping logic for partial sort
+            if (vl->is_precise_seam() && vr->is_precise_seam()) {
+                bool vl_strong = vl->is_precise_seam_strong();
+                bool vr_strong = vr->is_precise_seam_strong();
+                if (vl_strong != vr_strong)
+                    return vl_strong;
+                return false; // preserve order within same group
+            }
+
             return vl_type < vr_type;
         });
 }
-
 ModelInstance* ModelObject::add_instance()
 {
     ModelInstance* i = new ModelInstance(this);
@@ -2612,7 +2643,8 @@ std::vector<int> ModelVolume::get_extruders() const
     if (m_type == ModelVolumeType::INVALID
         || m_type == ModelVolumeType::NEGATIVE_VOLUME
         || m_type == ModelVolumeType::SUPPORT_BLOCKER
-        || m_type == ModelVolumeType::SUPPORT_ENFORCER)
+        || m_type == ModelVolumeType::SUPPORT_ENFORCER
+        || this->is_precise_seam()) // Precise Seam is non-printing helper geometry
         return std::vector<int>();
 
     if (mmu_segmentation_facets.timestamp() != mmuseg_ts) {
@@ -2816,6 +2848,19 @@ ModelVolumeType ModelVolume::type_from_string(const std::string &s)
 		return ModelVolumeType::SUPPORT_ENFORCER;
     if (s == "support_blocker")
 		return ModelVolumeType::SUPPORT_BLOCKER;
+    // Precise Seam types
+    if (s == "precise_seam_center")
+		return ModelVolumeType::PRECISE_SEAM_CENTER;
+    if (s == "precise_seam_left")
+		return ModelVolumeType::PRECISE_SEAM_LEFT;
+    if (s == "precise_seam_right")
+		return ModelVolumeType::PRECISE_SEAM_RIGHT;
+    if (s == "precise_seam_enforced")
+		return ModelVolumeType::PRECISE_SEAM_ENFORCED;
+    if (s == "precise_seam_blocked")
+		return ModelVolumeType::PRECISE_SEAM_BLOCKED;
+    if (s == "precise_seam_neutral")
+		return ModelVolumeType::PRECISE_SEAM_NEUTRAL;
     //assert(s == "0");
     // Default value if invalud type string received.
 	return ModelVolumeType::MODEL_PART;
@@ -2830,6 +2875,12 @@ std::string ModelVolume::type_to_string(const ModelVolumeType t)
 	case ModelVolumeType::PARAMETER_MODIFIER: return "modifier_part";
 	case ModelVolumeType::SUPPORT_ENFORCER:   return "support_enforcer";
 	case ModelVolumeType::SUPPORT_BLOCKER:    return "support_blocker";
+	case ModelVolumeType::PRECISE_SEAM_CENTER:   return "precise_seam_center";
+	case ModelVolumeType::PRECISE_SEAM_LEFT:     return "precise_seam_left";
+	case ModelVolumeType::PRECISE_SEAM_RIGHT:    return "precise_seam_right";
+	case ModelVolumeType::PRECISE_SEAM_ENFORCED: return "precise_seam_enforced";
+	case ModelVolumeType::PRECISE_SEAM_BLOCKED:  return "precise_seam_blocked";
+	case ModelVolumeType::PRECISE_SEAM_NEUTRAL:  return "precise_seam_neutral";
     default:
         assert(false);
         return "normal_part";
@@ -3598,6 +3649,15 @@ void FacetsAnnotation::shift_states_above(const ModelVolume &mv, EnforcerBlocker
     this->set(selector);
 }
 
+void FacetsAnnotation::remap_states(const ModelVolume &mv, const EnforcerBlockerStateMap &state_map)
+{
+    if (empty()) return;
+    TriangleSelector selector(mv.mesh());
+    selector.deserialize(m_data, false);
+    selector.remap_triangle_state(state_map);
+    this->set(selector);
+}
+
 void FacetsAnnotation::set_enforcer_block_type_limit(const ModelVolume  &mv,
                                                      EnforcerBlockerType max_type,
                                                      EnforcerBlockerType to_delete_filament,
@@ -3690,7 +3750,11 @@ void FacetsAnnotation::set_triangle_from_string(int triangle_id, const std::stri
             m_data.bitstream.insert(m_data.bitstream.end(), bool(dec & (1 << i)));
     }
 
-    m_data.update_used_states(bitstream_start_idx);
+    if (!m_data.update_used_states(bitstream_start_idx)) {
+        BOOST_LOG_TRIVIAL(warning) << __FUNCTION__ << ": dropping malformed paint data of triangle " << triangle_id;
+        m_data.bitstream.resize(bitstream_start_idx);
+        m_data.triangles_to_split.pop_back();
+    }
 }
 
 bool FacetsAnnotation::equals(const FacetsAnnotation &other) const
@@ -3772,6 +3836,7 @@ bool model_volume_list_changed(const ModelObject &model_object_old, const ModelO
         return std::find(types.begin(), types.end(), t) != types.end();
     });
 }
+
 
 template< typename TypeFilterFn, typename CompareFn>
 bool model_property_changed(const ModelObject &model_object_old, const ModelObject &model_object_new, TypeFilterFn type_filter, CompareFn compare)
@@ -3860,6 +3925,43 @@ bool model_has_advanced_features(const Model &model)
             	return true;
     }
     return false;
+}
+
+void remap_model_filament_slots(Model &model, const std::map<int, int> &slot_relocations)
+{
+    if (slot_relocations.empty())
+        return;
+
+    // Paint states and the object/volume "extruder" configs store one-based slot numbers
+    // (see Sidebar::on_action_add_filament's insertion remap for the same encoding).
+    std::map<int, int> one_based_slots;
+    for (const auto &[from, to] : slot_relocations)
+        one_based_slots.emplace(from + 1, to + 1);
+
+    EnforcerBlockerStateMap paint_state_map;
+    for (size_t state = 0; state < paint_state_map.size(); ++state)
+        paint_state_map[state] = EnforcerBlockerType(state);
+    for (const auto &[one_based_from, one_based_to] : one_based_slots) {
+        assert(one_based_from >= 0 && size_t(one_based_from) < paint_state_map.size());
+        assert(one_based_to > 0 && size_t(one_based_to) < paint_state_map.size());
+        paint_state_map[size_t(one_based_from)] = EnforcerBlockerType(one_based_to);
+    }
+
+    auto remap_extruder_config = [&one_based_slots](ModelConfig &config) -> bool {
+        const auto it = config.has("extruder") ? one_based_slots.find(config.extruder()) : one_based_slots.end();
+        if (it == one_based_slots.end())
+            return false;
+        config.set("extruder", it->second);
+        return true;
+    };
+
+    for (ModelObject *object : model.objects) {
+        remap_extruder_config(object->config);
+        for (ModelVolume *volume : object->volumes) {
+            remap_extruder_config(volume->config);
+            volume->mmu_segmentation_facets.remap_states(*volume, paint_state_map);
+        }
+    }
 }
 
 #ifndef NDEBUG
