@@ -1,10 +1,16 @@
 add_library(orcabench_core STATIC
     core/BuildId.cpp
+    core/Document.cpp
     core/Host.cpp
     core/Result.cpp
     )
 
 target_include_directories(orcabench_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+# json.hpp includes its siblings as <nlohmann/...>, which the nlohmann_json target's include
+# directory cannot resolve.
+target_link_libraries(orcabench_core PRIVATE nlohmann_json)
+target_include_directories(orcabench_core SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/deps_src)
 
 target_include_directories(orcabench_core PRIVATE ${ORCA_GIT_COMMIT_HASH_DIR})
 add_dependencies(orcabench_core git_commit_hash_header)
