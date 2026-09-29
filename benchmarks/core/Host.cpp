@@ -1,20 +1,69 @@
 #include "Host.hpp"
 
+#include <thread>
+
 // Every #ifdef in benchmarks/ belongs in this file, keeping the rest portable.
 #ifdef _WIN32
     #include <windows.h>
     #include <psapi.h>
 #else
     #include <sys/resource.h>
+    #include <sys/utsname.h>
+    #include <unistd.h>
     #ifdef __APPLE__
         #include <mach/mach.h>
+        #include <sys/sysctl.h>
     #else
         #include <fstream>
-        #include <unistd.h>
+        #include <string>
     #endif
 #endif
 
 namespace Slic3r { namespace Bench {
+
+namespace {
+
+// What a query returns when nothing coarser is available either, so a reader can tell it from a
+// field nobody set.
+constexpr const char* unknown = "unknown";
+
+// Strips the spaces some platforms pad a processor brand string with.
+std::string trimmed(const std::string& text)
+{
+    const auto first = text.find_first_not_of(" \t");
+    return first == std::string::npos ? std::string() : text.substr(first, text.find_last_not_of(" \t") - first + 1);
+}
+
+#ifdef _WIN32
+// The processor family, the coarser answer when the registry has no model name.
+std::string native_architecture()
+{
+    SYSTEM_INFO info {};
+    ::GetNativeSystemInfo(&info);
+    switch (info.wProcessorArchitecture) {
+    case PROCESSOR_ARCHITECTURE_AMD64: return "x86_64";
+    case PROCESSOR_ARCHITECTURE_ARM64: return "arm64";
+    case PROCESSOR_ARCHITECTURE_INTEL: return "x86";
+    default: return unknown;
+    }
+}
+#else
+std::string uname_description()
+{
+    utsname info {};
+    if (::uname(&info) != 0)
+        return unknown;
+    return std::string(info.sysname) + " " + info.release;
+}
+
+std::string uname_machine()
+{
+    utsname info {};
+    return ::uname(&info) == 0 ? info.machine : unknown;
+}
+#endif
+
+} // namespace
 
 std::uint64_t current_rss_bytes()
 {
@@ -88,6 +137,88 @@ std::uint64_t process_cpu_ns()
     };
     return to_ns(usage.ru_utime) + to_ns(usage.ru_stime);
 #endif
+}
+
+std::string host_name()
+{
+#ifdef _WIN32
+    char  name[MAX_COMPUTERNAME_LENGTH + 1] {};
+    DWORD size = sizeof(name);
+    if (::GetComputerNameA(name, &size))
+        return std::string(name, size);
+    return unknown;
+#else
+    char name[256] {};
+    if (::gethostname(name, sizeof(name) - 1) == 0)
+        return name;
+    return unknown;
+#endif
+}
+
+std::string os_description()
+{
+#ifdef _WIN32
+    // Since Windows 8.1, GetVersionEx reports whatever version the application manifest
+    // targets.
+    using RtlGetVersionFn = LONG(WINAPI*)(PRTL_OSVERSIONINFOW);
+    if (HMODULE ntdll = ::GetModuleHandleW(L"ntdll.dll")) {
+        const auto rtl_get_version = reinterpret_cast<RtlGetVersionFn>(
+            reinterpret_cast<void*>(::GetProcAddress(ntdll, "RtlGetVersion")));
+        RTL_OSVERSIONINFOW info {};
+        info.dwOSVersionInfoSize = sizeof(info);
+        if (rtl_get_version && rtl_get_version(&info) == 0)
+            return "Windows " + std::to_string(info.dwMajorVersion) + "." +
+                   std::to_string(info.dwMinorVersion) + "." + std::to_string(info.dwBuildNumber);
+    }
+    return "Windows";
+#else
+    #ifdef __APPLE__
+    char   version[64] {};
+    size_t size = sizeof(version);
+    if (::sysctlbyname("kern.osproductversion", version, &size, nullptr, 0) == 0)
+        return std::string("macOS ") + version;
+    #endif
+    return uname_description();
+#endif
+}
+
+std::string cpu_model()
+{
+#ifdef _WIN32
+    char  model[256] {};
+    DWORD size = sizeof(model);
+    const bool found = ::RegGetValueA(HKEY_LOCAL_MACHINE, "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
+                                      "ProcessorNameString", RRF_RT_REG_SZ, nullptr, model, &size) == ERROR_SUCCESS;
+    const std::string name = found ? trimmed(model) : std::string();
+    return name.empty() ? native_architecture() : name;
+#elif defined(__APPLE__)
+    char   brand[256] {};
+    size_t size = sizeof(brand);
+    const bool found = ::sysctlbyname("machdep.cpu.brand_string", brand, &size, nullptr, 0) == 0;
+    const std::string name = found ? trimmed(brand) : std::string();
+    return name.empty() ? uname_machine() : name;
+#else
+    // "model name" is missing on ARM, where the architecture from uname is the fallback.
+    std::ifstream cpuinfo("/proc/cpuinfo");
+    std::string   line;
+    while (std::getline(cpuinfo, line)) {
+        const auto colon = line.find(':');
+        if (colon == std::string::npos || line.compare(0, 10, "model name") != 0)
+            continue;
+        const std::string name = trimmed(line.substr(colon + 1));
+        if (!name.empty())
+            return name;
+    }
+    return uname_machine();
+#endif
+}
+
+unsigned logical_cores()
+{
+    // hardware_concurrency() may return 0 when it cannot tell, and a machine has at least one
+    // core.
+    const unsigned reported = std::thread::hardware_concurrency();
+    return reported == 0 ? 1 : reported;
 }
 
 }} // namespace Slic3r::Bench
