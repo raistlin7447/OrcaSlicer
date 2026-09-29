@@ -5,8 +5,10 @@
     "duration_ns": 14320000000
   },
   "measurement": {
-    "corpus": "embedded",
+    "affinity": "none",
+    "corpus": "embedded,handy",
     "iterations": "3",
+    "metrics": "wall,rss,hash,work",
     "policy": "quick",
     "stages": "process,export",
     "threads": "20",
