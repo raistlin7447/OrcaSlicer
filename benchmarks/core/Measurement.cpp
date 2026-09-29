@@ -33,6 +33,10 @@ void Measurement::span(std::string stage, const Scope& scope, Clock::time_point 
         throw std::invalid_argument("a span needs a stage");
     if (done_at < started_at)
         throw std::invalid_argument("the " + stage + " span ends before it starts");
+    if (started_at < m_iteration_start)
+        throw std::invalid_argument("the " + stage + " span starts before its iteration");
+    if (done_at > Clock::now())
+        throw std::invalid_argument("the " + stage + " span ends after it is reported");
     require_finite(metrics);
     m_timeline.push_back({std::move(stage), scope.text(), started_at, done_at, std::move(metrics)});
 }

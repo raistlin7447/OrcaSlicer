@@ -31,17 +31,21 @@ private:
 class Measurement
 {
 public:
-    // Throws std::invalid_argument for a span without a stage, one that ends before it starts, or a
-    // metric that is not finite.
+    // The Runner builds one for each iteration with the time execute() starts.
+    explicit Measurement(Clock::time_point iteration_start) : m_iteration_start(iteration_start) {}
+
+    // Throws std::invalid_argument for a span without a stage, one that ends before it starts, starts
+    // before its iteration or ends after it is reported, or a metric that is not finite.
     void span(std::string stage, const Scope& scope, Clock::time_point started_at, Clock::time_point done_at,
               Metrics metrics = {});
 
-    // A measurement of the whole iteration, beside the wall time, CPU time and memory the Runner
-    // takes, refused with std::invalid_argument when it is not finite or its key was reported already.
+    // A measurement of the whole iteration, beside the wall time and CPU time the Runner takes,
+    // refused with std::invalid_argument when it is not finite or its key was reported already.
     void metric(std::string key, double value);
 
     // Each throws std::invalid_argument when reported twice in one iteration, and work() also for a
-    // number that is not finite.
+    // number that is not finite. The hash leaves out whatever varies between runs of the same input,
+    // such as the time the G-code header records, since every pass has to reproduce the first one's.
     void work(WorkStats work);
     void output_hash(std::uint64_t hash);
 
@@ -51,6 +55,7 @@ public:
     const std::optional<std::uint64_t>& hash() const { return m_hash; }
 
 private:
+    Clock::time_point            m_iteration_start;
     Timeline                     m_timeline;
     Metrics                      m_metrics;
     std::optional<WorkStats>     m_work;
