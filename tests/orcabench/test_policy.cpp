@@ -114,11 +114,11 @@ TEST_CASE("a run without a stage is refused", "[OrcaBench][Policy]")
     CHECK_THROWS_AS(resolved("quick", overrides), PolicyError);
 }
 
-TEST_CASE("a run that leaves out export does not collect the hash", "[OrcaBench][Policy]")
+TEST_CASE("a run that leaves out export collects neither the hash nor the work stats", "[OrcaBench][Policy]")
 {
     PolicyOverrides overrides;
     overrides.stages = StageSet {Stage::Process};
-    CHECK(to_string(resolved("quick", overrides).metrics) == "wall,rss,work");
+    CHECK(to_string(resolved("quick", overrides).metrics) == "wall,rss");
 }
 
 TEST_CASE("a run that collects only the hash is refused without export", "[OrcaBench][Policy]")

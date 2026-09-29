@@ -70,9 +70,9 @@ coverage, and fixes its warmup and iteration counts.
 `PolicyOverrides` replaces a preset's values field by field, so a run can be `precise` with four
 threads. `Policy::resolve()` applies them, turns 0 threads into the hardware count, and refuses an
 unknown preset, more threads than the hardware runs, a run without iterations or stages, and a
-warmup or iteration count on a preset that fixes them. Only export writes G-code, so a run whose
-stages leave export out drops the hash from what it collects, and one left collecting nothing,
-which is `verify` without export, is refused.
+warmup or iteration count on a preset that fixes them. Only export writes G-code, and the hash and
+the work stats both come from it, so a run whose stages leave export out drops both from what it
+collects, and one left collecting nothing, which is `verify` without export, is refused.
 
 `Policy::identity()` is the only writer of the measurement identity. It names every field of
 `Policy` in a structured binding, so a new field does not compile until it is recorded or

@@ -1,6 +1,7 @@
 #include <catch2/catch_all.hpp>
 
 #include "core/Document.hpp"
+#include "core/Policy.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -82,9 +83,14 @@ Result sample()
     result.suite.started_at = WallTime(std::chrono::milliseconds(1790613727123)); // 2026-09-28T16:42:07.123Z
     result.suite.duration   = 14320000000ns;
 
-    result.measurement = {{MeasurementKey::policy, "quick"},    {MeasurementKey::warmup, "1"},
-                          {MeasurementKey::iterations, "3"},    {MeasurementKey::threads, "20"},
-                          {MeasurementKey::stages, "process,export"}, {MeasurementKey::corpus, "embedded"}};
+    result.measurement = {{MeasurementKey::policy, "quick"},
+                          {MeasurementKey::warmup, "1"},
+                          {MeasurementKey::iterations, "3"},
+                          {MeasurementKey::threads, "20"},
+                          {MeasurementKey::stages, "process,export"},
+                          {MeasurementKey::metrics, "wall,rss,hash,work"},
+                          {MeasurementKey::corpus, "embedded,handy"},
+                          {MeasurementKey::affinity, "none"}};
 
     result.build.revision         = "a83e6b7b74";
     result.build.dirty            = true;
@@ -136,6 +142,13 @@ TEST_CASE("a result is written exactly as the schema lays it out", "[OrcaBench][
 {
     // The fixture is written by hand from the schema, so never regenerate it from this writer.
     CHECK(compact(write_document(sample())) == compact(fixture()));
+}
+
+TEST_CASE("the fixture's measurement is what quick records at 20 threads", "[OrcaBench][Document]")
+{
+    PolicyOverrides overrides;
+    overrides.threads = 20;
+    CHECK(read_document(fixture()).measurement == Policy::resolve("quick", overrides, 20).identity());
 }
 
 TEST_CASE("a document reads and writes back unchanged", "[OrcaBench][Document]")

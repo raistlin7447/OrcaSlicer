@@ -57,9 +57,9 @@ struct Policy
     // Whether the run takes only the workloads marked for profile training.
     bool        pgo_eligible_only = false;
 
-    // Drops the hash when the stages leave out export, which alone writes G-code, and throws
-    // PolicyError for anything a run cannot use, such as an unknown preset or more threads than
-    // the hardware runs.
+    // Drops the hash and the work stats when the stages leave out export, since both come from the
+    // G-code only export writes, and throws PolicyError for anything a run cannot use, such as an
+    // unknown preset or more threads than the hardware runs.
     static Policy resolve(std::string_view preset, const PolicyOverrides& overrides, unsigned hardware_threads);
 
     // Every setting compare enforces, written here and nowhere else.

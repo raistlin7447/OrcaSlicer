@@ -123,11 +123,11 @@ Policy Policy::resolve(std::string_view preset, const PolicyOverrides& overrides
         throw PolicyError("a run needs at least one iteration");
     if (policy.stages.empty())
         throw PolicyError("a run needs at least one stage to time");
-    // Only export writes G-code, so without it there is no hash to collect.
-    if (policy.stages.count(Stage::Export) == 0 && policy.metrics.count(Metric::Hash) != 0) {
-        policy.metrics.erase(Metric::Hash);
-        if (policy.metrics.empty())
-            throw PolicyError(policy.name + " collects only the output hash, which needs the export stage");
+    // Only export writes G-code, and the hash and the work stats both come from it.
+    if (policy.stages.count(Stage::Export) == 0) {
+        const std::size_t dropped = policy.metrics.erase(Metric::Hash) + policy.metrics.erase(Metric::Work);
+        if (dropped != 0 && policy.metrics.empty())
+            throw PolicyError(policy.name + " collects only what export writes, so it needs the export stage");
     }
     return policy;
 }
