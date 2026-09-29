@@ -3,6 +3,7 @@
 #include "core/Host.hpp"
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 using namespace Slic3r::Bench;
@@ -53,4 +54,32 @@ TEST_CASE("process CPU time never moves backwards", "[OrcaBench][Host]")
     const std::uint64_t first = process_cpu_ns();
     REQUIRE(first > 0);
     CHECK(process_cpu_ns() >= first);
+}
+
+TEST_CASE("machine queries return something other than their fallback", "[OrcaBench][Host]")
+{
+    // "unknown" is each query's fallback when the platform does not answer.
+    CHECK(host_name() != "unknown");
+    CHECK(os_description() != "unknown");
+    CHECK(cpu_model() != "unknown");
+    CHECK(logical_cores() > 0);
+}
+
+TEST_CASE("machine identity is the same on every call", "[OrcaBench][Host]")
+{
+    CHECK(host_name() == host_name());
+    CHECK(os_description() == os_description());
+    CHECK(cpu_model() == cpu_model());
+    CHECK(logical_cores() == logical_cores());
+}
+
+TEST_CASE("identity strings have no padding or embedded nulls", "[OrcaBench][Host]")
+{
+    for (const std::string& value : { host_name(), os_description(), cpu_model() }) {
+        CAPTURE(value);
+        REQUIRE_FALSE(value.empty());
+        CHECK(value.find('\0') == std::string::npos);
+        CHECK(value.front() != ' ');
+        CHECK(value.back() != ' ');
+    }
 }

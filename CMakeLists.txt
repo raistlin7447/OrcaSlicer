@@ -1234,6 +1234,16 @@ elseif (MSVC AND NOT IS_CLANG_CL)
     add_compile_options(/W3 /we4715)
 endif ()
 
+# The commit header the slicer and the benchmarks both include.
+set(ORCA_GIT_COMMIT_HASH_DIR "${CMAKE_BINARY_DIR}/git_commit_hash")
+add_custom_target(git_commit_hash_header
+    BYPRODUCTS "${ORCA_GIT_COMMIT_HASH_DIR}/git_commit_hash.h"
+    COMMAND ${CMAKE_COMMAND}
+        "-DSOURCE_DIR=${CMAKE_SOURCE_DIR}"
+        "-DOUT_FILE=${ORCA_GIT_COMMIT_HASH_DIR}/git_commit_hash.h"
+        -P "${CMAKE_SOURCE_DIR}/cmake/modules/GitCommitHash.cmake"
+    COMMENT "Resolving the git commit hash")
+
 add_subdirectory(src)
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT OrcaSlicer_app_gui)
 
