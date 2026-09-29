@@ -76,7 +76,7 @@ ReleaseNoteDialog::ReleaseNoteDialog(Plater *plater /*= nullptr*/)
     m_sizer_right->Add(0, 0, 1, wxTOP, FromDIP(15));
 
     m_vebview_release_note = new wxScrolledWindow(this, wxID_ANY, wxDefaultPosition, wxSize(FromDIP(560), FromDIP(430)), wxVSCROLL);
-    m_vebview_release_note->SetScrollRate(5, 5);
+    m_vebview_release_note->SetScrollRate(5, FromDIP(20));
     m_vebview_release_note->SetBackgroundColour(wxColour(0xF8, 0xF8, 0xF8));
     m_vebview_release_note->SetMaxSize(wxSize(FromDIP(560), FromDIP(430)));
 
@@ -142,7 +142,7 @@ UpdatePluginDialog::UpdatePluginDialog(wxWindow* parent /*= nullptr*/)
     operation_tips->SetMaxSize(wxSize(FromDIP(260), -1));
 
     m_vebview_release_note = new wxScrolledWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxVSCROLL);
-    m_vebview_release_note->SetScrollRate(5, 5);
+    m_vebview_release_note->SetScrollRate(5, FromDIP(20));
     m_vebview_release_note->SetBackgroundColour(wxColour(0xF8, 0xF8, 0xF8));
     m_vebview_release_note->SetMinSize(wxSize(FromDIP(260), FromDIP(150)));
     m_vebview_release_note->SetMaxSize(wxSize(FromDIP(260), FromDIP(150)));
@@ -277,7 +277,7 @@ UpdateVersionDialog::UpdateVersionDialog(wxWindow *parent)
     m_simplebook_release_note->SetBackgroundColour(wxColour(0xF8, 0xF8, 0xF8));
 
     m_scrollwindows_release_note = new wxScrolledWindow(m_simplebook_release_note, wxID_ANY, wxDefaultPosition, wxSize(FromDIP(560), FromDIP(430)), wxVSCROLL);
-    m_scrollwindows_release_note->SetScrollRate(5, 5);
+    m_scrollwindows_release_note->SetScrollRate(5, FromDIP(20));
     m_scrollwindows_release_note->SetBackgroundColour(wxColour(0xF8, 0xF8, 0xF8));
 
     //webview
@@ -538,7 +538,7 @@ SecondaryCheckDialog::SecondaryCheckDialog(wxWindow* parent, wxWindowID id, cons
     m_sizer_right->Add(0, 0, 1, wxTOP, FromDIP(15));
 
     m_vebview_release_note = new wxScrolledWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxVSCROLL);
-    m_vebview_release_note->SetScrollRate(0, 5);
+    m_vebview_release_note->SetScrollRate(0, FromDIP(20));
     m_vebview_release_note->SetBackgroundColour(*wxWHITE);
     m_vebview_release_note->SetMinSize(wxSize(FromDIP(400), FromDIP(380)));
     m_sizer_right->Add(m_vebview_release_note, 0, wxEXPAND | wxRIGHT | wxLEFT, FromDIP(15));
@@ -823,7 +823,7 @@ PrintErrorDialog::PrintErrorDialog(wxWindow* parent, wxWindowID id, const wxStri
     m_sizer_right->Add(0, 0, 1, wxTOP, FromDIP(5));
 
     m_vebview_release_note = new wxScrolledWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxVSCROLL);
-    m_vebview_release_note->SetScrollRate(0, 5);
+    m_vebview_release_note->SetScrollRate(0, FromDIP(20));
     m_vebview_release_note->SetBackgroundColour(*wxWHITE);
     m_vebview_release_note->SetMinSize(wxSize(FromDIP(320), FromDIP(250)));
     m_sizer_right->Add(m_vebview_release_note, 0, wxEXPAND | wxRIGHT | wxLEFT, FromDIP(15));
@@ -1122,7 +1122,7 @@ ConfirmBeforeSendDialog::ConfirmBeforeSendDialog(wxWindow* parent, wxWindowID id
     m_sizer_right->Add(0, 0, 1, wxTOP, FromDIP(15));
 
     m_vebview_release_note = new wxScrolledWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxVSCROLL);
-    m_vebview_release_note->SetScrollRate(0, 5);
+    m_vebview_release_note->SetScrollRate(0, FromDIP(20));
     m_vebview_release_note->SetBackgroundColour(*wxWHITE);
     m_vebview_release_note->SetMinSize(wxSize(FromDIP(400), FromDIP(380)));
     m_sizer_right->Add(m_vebview_release_note, 0, wxEXPAND | wxRIGHT | wxLEFT, FromDIP(15));
@@ -1250,7 +1250,7 @@ void ConfirmBeforeSendDialog::update_text(std::vector<ConfirmBeforeSendInfo> tex
         else
         {
             label_item = new Label(m_vebview_release_note, text.text + " " + _L("Please refer to Wiki before use->"), LB_AUTO_WRAP);
-            label_item->Bind(wxEVT_LEFT_DOWN, [this, text](wxMouseEvent& e) { wxLaunchDefaultBrowser(text.wiki_url);});
+            label_item->Bind(wxEVT_LEFT_DOWN, [text](wxMouseEvent& e) { wxLaunchDefaultBrowser(text.wiki_url);});
             label_item->Bind(wxEVT_ENTER_WINDOW, [this](auto& e) { SetCursor(wxCURSOR_HAND); });
             label_item->Bind(wxEVT_LEAVE_WINDOW, [this](auto& e) { SetCursor(wxCURSOR_ARROW); });
         }
@@ -1991,7 +1991,7 @@ void InputIpAddressDialog::workerThreadFunc(std::string str_ip, std::string str_
         if (w.expired()) return;
 
         if (m_obj) {
-            m_obj->set_user_access_code(str_access_code);
+            m_obj->set_access_code(str_access_code);
             wxGetApp().getDeviceManager()->set_selected_machine(m_obj->get_dev_id());
         }
 
@@ -2055,6 +2055,11 @@ void InputIpAddressDialog::on_text(wxCommandEvent &evt)
 {
     auto str_ip              = m_input_ip->GetTextCtrl()->GetValue();
     auto str_access_code     = m_input_access_code->GetTextCtrl()->GetValue();
+
+    if (str_access_code.empty()) {
+        str_access_code = "88888888";
+    }
+
     auto str_name            = m_input_printer_name->GetTextCtrl()->GetValue().Strip(wxString::both);
     auto str_sn              = m_input_sn->GetTextCtrl()->GetValue().Strip(wxString::both);
     bool invalid_access_code = true;
@@ -2062,7 +2067,7 @@ void InputIpAddressDialog::on_text(wxCommandEvent &evt)
     for (char c : str_access_code) {
         if (!(('0' <= c && c <= '9') || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z'))) {
             invalid_access_code = false;
-            return;
+            break;
         }
     }
 
