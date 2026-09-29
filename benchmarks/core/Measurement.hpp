@@ -38,7 +38,7 @@ public:
 
     // Throws std::invalid_argument for a span without a stage, one that ends before it starts, starts
     // before its iteration or ends after it is reported, a stage already reported for its scope, or a
-    // metric that is not finite.
+    // metric that is not finite or that the sampler writes.
     void span(std::string stage, const Scope& scope, Clock::time_point started_at, Clock::time_point done_at,
               Metrics metrics = {});
 

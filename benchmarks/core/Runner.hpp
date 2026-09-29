@@ -2,6 +2,7 @@
 
 #include "core/Policy.hpp"
 #include "core/Result.hpp"
+#include "core/Sampler.hpp"
 #include "core/Workload.hpp"
 
 #include <vector>
@@ -25,8 +26,9 @@ public:
 // Runs each entry the policy admits through setup() once, then prepare() and execute() for every
 // warmup and timed pass, where a workload that throws, or whose pass differs from its first, fails
 // with a reason and the run goes on. Throws WorkloadError before entering the environment for an
-// entry name that validate() refuses or that repeats, since results are keyed by name.
+// entry name that validate() refuses or that repeats, since results are keyed by name. The probe reads
+// the process, through Host unless a test scripts it.
 Result run_suite(const std::vector<CatalogEntry>& entries, const Policy& policy, const WorkloadKinds& kinds,
-                 RunEnvironment& environment);
+                 RunEnvironment& environment, const ProcessProbe& probe = host_reading);
 
 }} // namespace Slic3r::Bench
