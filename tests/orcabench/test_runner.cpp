@@ -122,6 +122,20 @@ TEST_CASE("a workload is told which stages to time", "[OrcaBench][Runner]")
     CHECK(timed == StageSet {Stage::Export});
 }
 
+TEST_CASE("an entry name that is invalid or repeats ends the run before any workload", "[OrcaBench][Runner]")
+{
+    const std::vector<std::string> names =
+        GENERATE(values<std::vector<std::string>>({{"fake/cube", "fake/cube"}, {"two words"}}));
+    CAPTURE(names);
+    std::vector<CatalogEntry> entries;
+    for (const std::string& name : names)
+        entries.push_back(entry_of(name));
+    std::vector<std::string> calls;
+    FakeEnvironment          environment(calls);
+    CHECK_THROWS_AS(run_suite(entries, quick(), fake_kinds({}, calls), environment), WorkloadError);
+    CHECK(calls.empty());
+}
+
 TEST_CASE("the environment is entered once before the first workload and left after the last", "[OrcaBench][Runner]")
 {
     std::vector<std::string> calls;
@@ -259,13 +273,14 @@ TEST_CASE("a pass whose output differs from the first pass fails the workload", 
 
 TEST_CASE("what the policy does not collect is absent from the result", "[OrcaBench][Runner]")
 {
-    // The hash changes on every pass, which fails a workload only where the policy collects it.
+    // The hash and the work stats change on every pass, which fails a workload only where the
+    // policy collects them.
     FakeHooks hooks;
     hooks.execute = [](unsigned pass, Measurement& measurement) {
         const Clock::time_point started_at = Clock::now();
         measurement.span("posSlice", Scope::print(), started_at, Clock::now());
         WorkStats work;
-        work.layers = 190;
+        work.layers = 190 + pass;
         measurement.work(work);
         measurement.output_hash(pass);
     };
@@ -293,7 +308,7 @@ TEST_CASE("what the policy does not collect is absent from the result", "[OrcaBe
         CHECK_FALSE(workload.work.has_value());
         CHECK(workload.iterations.empty());
     }
-    SECTION("quick without export drops the hash, so a changing hash does not fail it")
+    SECTION("quick without export drops the hash and the work stats, so their changes do not fail it")
     {
         PolicyOverrides overrides;
         overrides.stages    = StageSet {Stage::Process};
@@ -302,8 +317,7 @@ TEST_CASE("what the policy does not collect is absent from the result", "[OrcaBe
         const WorkloadResult& workload = result.workloads.front();
         REQUIRE(workload.outcome == Outcome::Ran);
         CHECK_FALSE(workload.output_hash.has_value());
-        REQUIRE(workload.work.has_value());
-        CHECK(workload.work->layers == 190);
+        CHECK_FALSE(workload.work.has_value());
         CHECK(workload.iterations.size() == 3);
     }
 }

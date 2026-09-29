@@ -39,12 +39,13 @@ public:
     void span(std::string stage, const Scope& scope, Clock::time_point started_at, Clock::time_point done_at,
               Metrics metrics = {});
 
-    // A measurement of the whole iteration, beside the wall time, CPU time and memory the Runner
-    // takes, refused with std::invalid_argument when it is not finite or its key was reported already.
+    // A measurement of the whole iteration, beside the wall time and CPU time the Runner takes,
+    // refused with std::invalid_argument when it is not finite or its key was reported already.
     void metric(std::string key, double value);
 
     // Each throws std::invalid_argument when reported twice in one iteration, and work() also for a
-    // number that is not finite.
+    // number that is not finite. The hash leaves out whatever varies between runs of the same input,
+    // such as the time the G-code header records, since every pass has to reproduce the first one's.
     void work(WorkStats work);
     void output_hash(std::uint64_t hash);
 

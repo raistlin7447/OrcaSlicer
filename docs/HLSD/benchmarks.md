@@ -34,9 +34,9 @@ architecture in place of a CPU model, and to `"unknown"` only when nothing coars
 
 `Result.hpp` describes a run: the suite's start time and duration, what the run asked for, the
 build and the machine, and one entry per workload. A workload ran, was skipped because a fixture
-was missing, or failed because it threw, and the last two have a reason. Neither counts as a
-pass, and the outcome counts are computed from the list whenever asked, never stored, so no total
-can disagree with it.
+was missing, or failed because it threw or the Runner refused what it reported, and the last two
+have a reason. Neither counts as a pass, and the outcome counts are computed from the list
+whenever asked, never stored, so no total can disagree with it.
 
 A field is typed when every result has it, such as a span's stage and times or an iteration's
 wall time and CPU time. Peak memory, the work stats and the output hash are optional, since a run
@@ -124,7 +124,9 @@ registry and a `RunEnvironment`, and returns the `Result`. The environment is wh
 around all its workloads, such as the thread cap, the locale, `resources_dir()`, the temporary
 directory and logging. Those are libslic3r and TBB calls, so core only declares the interface and
 the code that links libslic3r implements it. The Runner enters it once before the first workload
-and leaves it after the last, and only an environment that fails to enter ends the run.
+and leaves it after the last. A run ends before any workload starts when an entry name is one
+`validate()` refuses or one that repeats, since results are keyed by name, or when the environment
+fails to enter.
 
 Each workload is built, set up once, then prepared and executed for every warmup and timed pass.
 Under `pgo`, an entry that may not train is left out of the run, the same as one the selection
@@ -139,11 +141,12 @@ before it, or ends after it is reported, is refused. A workload that reuses stat
 pass therefore fails, and every recorded span lies inside its iteration.
 
 Every pass, warmups included, must reproduce the first pass's output hash and work stats, since a
-result holds one of each, and a pass that differs fails the workload. A result keeps the hash and
-the work stats only when the policy collects them, and a timed pass becomes an iteration only when
-wall time is collected, so `verify` records its hash and no iterations. The Runner does not record
-peak memory, since the process's high-water mark would give every later iteration an earlier
-workload's maximum.
+result holds one of each, and a pass that differs fails the workload. The hash therefore leaves out
+whatever varies between runs of the same input, such as the time the G-code header records. A
+result keeps the hash and the work stats only when the policy collects them, and a timed pass
+becomes an iteration only when wall time is collected, so `verify` records its hash and no
+iterations. The Runner does not record peak memory, since the process's high-water mark would give
+every later iteration an earlier workload's maximum.
 
 ## Build identity
 

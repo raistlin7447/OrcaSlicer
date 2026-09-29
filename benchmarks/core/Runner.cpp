@@ -9,6 +9,7 @@
 #include <exception>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -67,7 +68,7 @@ bool same_work(const std::optional<WorkStats>& a, const std::optional<WorkStats>
 }
 
 // "warmup pass 1" or "timed pass 2", where pass counts from 1 across both.
-std::string pass_name(unsigned pass, unsigned warmup)
+std::string pass_name(std::uint64_t pass, unsigned warmup)
 {
     return pass <= warmup ? "warmup pass " + std::to_string(pass) : "timed pass " + std::to_string(pass - warmup);
 }
@@ -103,7 +104,9 @@ WorkloadResult run_workload(const CatalogEntry& entry, const Policy& policy, con
         std::optional<std::uint64_t> hash;
         std::optional<WorkStats>     work;
         std::vector<IterationResult> iterations;
-        for (unsigned pass = 1; pass <= policy.warmup + policy.iterations; ++pass) {
+        // 64 bits, so the count cannot wrap whatever the policy's counts are.
+        const std::uint64_t passes = std::uint64_t(policy.warmup) + policy.iterations;
+        for (std::uint64_t pass = 1; pass <= passes; ++pass) {
             const std::string name = pass_name(pass, policy.warmup);
             when = " on " + name;
             call = "prepare()";
@@ -150,6 +153,13 @@ WorkloadResult run_workload(const CatalogEntry& entry, const Policy& policy, con
 Result run_suite(const std::vector<CatalogEntry>& entries, const Policy& policy, const WorkloadKinds& kinds,
                  RunEnvironment& environment)
 {
+    std::set<std::string> names;
+    for (const CatalogEntry& entry : entries) {
+        validate(entry);
+        if (!names.insert(entry.name).second)
+            throw WorkloadError("the catalog entry name '" + entry.name + "' appears twice");
+    }
+
     Result result;
     result.suite.started_at = std::chrono::floor<std::chrono::milliseconds>(std::chrono::system_clock::now());
     const Clock::time_point started_at = Clock::now();
