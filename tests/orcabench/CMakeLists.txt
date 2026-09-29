@@ -4,6 +4,7 @@ add_executable(${_TEST_NAME}_tests
     test_buildid.cpp
     test_document.cpp
     test_host.cpp
+    test_policy.cpp
     test_result.cpp
     )
 

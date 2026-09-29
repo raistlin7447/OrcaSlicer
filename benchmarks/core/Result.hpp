@@ -51,7 +51,9 @@ inline constexpr const char* warmup     = "warmup";
 inline constexpr const char* iterations = "iterations";
 inline constexpr const char* threads    = "threads";
 inline constexpr const char* stages     = "stages";
+inline constexpr const char* metrics    = "metrics";
 inline constexpr const char* corpus     = "corpus";
+inline constexpr const char* affinity   = "affinity";
 } // namespace MeasurementKey
 
 // What built the code, which may differ between two comparable results.

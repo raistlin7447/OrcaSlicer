@@ -48,6 +48,37 @@ Measurement identity, what the run asked for, is a map compared whole, so two re
 comparable exactly when it is equal. Build and machine identity may differ between comparable
 results, since comparing compilers or machines is one of the uses.
 
+## Policies
+
+A policy sets how many threads slice, how many untimed warmup passes run before the timed
+iterations, which stages are timed, what is collected, and whether only the workloads marked for
+profile training run. Four presets cover the framework's uses.
+
+| Preset    | Threads  | Warmup | Iterations | Collects              | Stages                |
+| --------- | -------- | -----: | ---------: | --------------------- | --------------------- |
+| `quick`   | hardware |      1 |          3 | wall, rss, hash, work | process, export       |
+| `precise` | 1        |      2 |         10 | wall, rss, hash, work | process, export       |
+| `verify`  | hardware |      0 |          1 | hash                  | process, export       |
+| `pgo`     | hardware |      0 |          1 | none                  | load, process, export |
+
+`quick` is the edit loop. `precise` runs one thread, where the slicing itself takes the largest
+share of the wall time and runs vary least, and its numbers are therefore never comparable with
+`quick`'s. `verify` exists for the output hash. `pgo` runs each workload exactly once for profile
+coverage, and fixes its warmup and iteration counts.
+
+`PolicyOverrides` replaces a preset's values field by field, so a run can be `precise` with four
+threads. `Policy::resolve()` applies them, turns 0 threads into the hardware count, and refuses an
+unknown preset, more threads than the hardware runs, a run without iterations or stages, and a
+warmup or iteration count on a preset that fixes them. Only export writes G-code, so a run whose
+stages leave export out drops the hash from what it collects, and one left collecting nothing,
+which is `verify` without export, is refused.
+
+`Policy::identity()` is the only writer of the measurement identity. It names every field of
+`Policy` in a structured binding, so a new field does not compile until it is recorded or
+explicitly left out. Threads are recorded as the resolved count, and an empty set as `none`. The
+corpus and the affinity are recorded as `embedded,handy` and `none`, the only values they have so
+far, so the results taken now stay comparable once either can vary.
+
 ## Build identity
 
 `BuildId.cpp` reports the commit and whether the working copy was dirty, read from
