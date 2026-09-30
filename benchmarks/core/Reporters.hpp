@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/Result.hpp"
-#include "core/Runner.hpp"
+#include "core/RunEvents.hpp"
 #include "core/Summary.hpp"
 
 #include <cstddef>

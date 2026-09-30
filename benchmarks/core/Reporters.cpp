@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <iterator>
 #include <optional>
 #include <ostream>
 #include <sstream>
@@ -70,7 +71,8 @@ std::string right(const std::string& text, std::size_t width)
 // A name with a text flush with the console's right edge, or two spaces after a name too long for that.
 std::string name_line(const std::string& name, const std::string& text)
 {
-    return padded(name, std::max(line_width - text.size(), name.size() + 2)) + text + "\n";
+    const std::size_t room = text.size() < line_width ? line_width - text.size() : 0;
+    return padded(name, std::max(room, name.size() + 2)) + text + "\n";
 }
 
 // The column naming a row, with one space after a name too long for it.
@@ -82,15 +84,17 @@ std::string label(const Properties& properties, const char* key)
     return found == properties.end() ? "-" : found->second;
 }
 
-// Whether the flags turn optimization off, as OrcaSlicer's RelWithDebInfo does.
+// Whether the last optimization level in the flags, the one the compiler applies, turns optimization
+// off, as OrcaSlicer's RelWithDebInfo does.
 bool unoptimized(const std::string& flags)
 {
-    std::istringstream words(flags);
-    std::string        word;
+    constexpr std::string_view levels[] = {"/Od", "/O1", "/O2", "/Ox", "-O0", "-O", "-O1", "-O2", "-O3", "-Os", "-Oz", "-Ofast", "-Og"};
+    std::istringstream         words(flags);
+    std::string                word, level;
     while (words >> word)
-        if (word == "/Od" || word == "-O0")
-            return true;
-    return false;
+        if (std::find(std::begin(levels), std::end(levels), word) != std::end(levels))
+            level = word;
+    return level == "/Od" || level == "-O0";
 }
 
 class ConsoleReporter : public Reporter
@@ -101,6 +105,7 @@ public:
     void started(const Result& header) override
     {
         m_header                       = header;
+        m_marks                        = {};
         const BuildIdentity&   build   = header.build;
         const MachineIdentity& machine = header.machine;
         m_out << "orca_bench  " << label(header.measurement, MeasurementKey::policy)
@@ -126,13 +131,15 @@ public:
     void finished(const Result& result) override
     {
         std::string legends;
-        if (m_noisy)
+        if (m_marks.noisy)
             legends += "~ CV above the " + fixed(100 * significance_bar, 0) + "% significance bar, so a change that size there is noise\n";
-        if (m_shared)
+        if (m_marks.shared)
             legends += "* readings shared with stages that ran at the same time\n";
-        if (m_floored)
-            legends += "CPU left out where Windows' " + fixed(Millis(windows_cpu_tick).count(), 1) + " ms steps could skew it past " +
-                       fixed(100 * cpu_error_limit, 0) + "%\n";
+        if (m_marks.unfinished)
+            legends += "! started at least once without finishing, so some of its time is in unaccounted\n";
+        if (m_marks.floored)
+            legends += "CPU left out where " + fixed(Millis(recorded_cpu_time_step(m_header.machine)).count(), 1) +
+                       " ms steps in CPU time could skew it past " + fixed(100 * cpu_error_limit, 0) + "%\n";
         if (!legends.empty())
             m_out << "\n" << legends;
         m_out << "\n"
@@ -163,7 +170,7 @@ private:
                 footer.push_back("CPU " + fixed(*summary.cpu, 1) + "x");
             else if (summary.cpu_below_floor)
                 footer.push_back("CPU -");
-            m_floored = m_floored || summary.cpu_below_floor;
+            m_marks.floored = m_marks.floored || summary.cpu_below_floor;
         }
         if (workload.work) {
             footer.push_back("moves " + grouped(workload.work->moves));
@@ -216,7 +223,11 @@ private:
         std::string name = row.scope.empty() ? row.stage : row.stage + " " + row.scope;
         if (row.shared)
             name += "*";
-        m_shared = m_shared || row.shared;
+        const bool partly_unfinished = row.unfinished && row.state != StageState::Unfinished;
+        if (partly_unfinished)
+            name += "!";
+        m_marks.shared     = m_marks.shared || row.shared;
+        m_marks.unfinished = m_marks.unfinished || partly_unfinished;
         switch (row.state) {
         case StageState::Unfinished: return name_cell(name) + right("never finished", time_width) + "\n";
         case StageState::NotRun: return name_cell(name) + right("not run", time_width) + "\n";
@@ -224,20 +235,27 @@ private:
         case StageState::Ran: break;
         }
         const bool noisy = row.cv && *row.cv > significance_bar;
-        m_noisy          = m_noisy || noisy;
-        m_floored        = m_floored || row.cpu_below_floor;
+        m_marks.noisy    = m_marks.noisy || noisy;
+        m_marks.floored  = m_marks.floored || row.cpu_below_floor;
         return name_cell(name) + right(milliseconds(row.mean), time_width) + right(milliseconds(row.min), time_width) +
                right(row.cv ? percent(*row.cv) : "-", cv_width) + (noisy ? "~" : " ") + right(percent(row.share), share_width) +
                right(row.cpu ? fixed(*row.cpu, 1) + "x" : "-", cpu_width) +
                right(row.peak_rss_bytes ? mebibytes(*row.peak_rss_bytes) : "-", peak_width) + "\n";
     }
 
+    // The marks this run's rows used, each explained by a legend at the end.
+    struct Marks
+    {
+        bool noisy      = false;
+        bool shared     = false;
+        bool unfinished = false;
+        bool floored    = false;
+    };
+
     std::ostream& m_out;
     ReportOptions m_options;
     Result        m_header;
-    bool          m_noisy   = false;
-    bool          m_shared  = false;
-    bool          m_floored = false;
+    Marks         m_marks;
 };
 
 class JsonReporter : public Reporter
@@ -302,9 +320,7 @@ std::unique_ptr<Reporter> make_reporter(std::string_view name, std::ostream& out
 
 void report(Reporter& reporter, const Result& result)
 {
-    Result header = result;
-    header.workloads.clear();
-    reporter.started(header);
+    reporter.started(Result {result.suite, result.measurement, result.build, result.machine, {}});
     for (const WorkloadResult& workload : result.workloads)
         reporter.workload(workload);
     reporter.finished(result);
@@ -373,6 +389,7 @@ RunEvents report_events(Reporter& reporter, Progress* progress)
             progress->clear();
         reporter.workload(workload);
     };
+    events.finished = [&reporter](const Result& result) { reporter.finished(result); };
     return events;
 }
 

@@ -159,10 +159,11 @@ so `verify` records its hash and no iterations. The sampler adds each iteration'
 each span's readings.
 
 The Runner reports as it runs through `RunEvents`: the run starting, each workload starting and
-finishing, and each pass finishing with the time `execute()` took. They fire after a pass's last
-reading and before the next pass is prepared, never while a pass is timed or sampled, so whatever
-listens cannot slow a measurement. A listener that throws after a pass fails that workload, as the
-workload throwing would.
+finishing, each pass finishing with the time `execute()` took, and the run finishing with the whole
+result once the environment is left. A pass's event fires after the pass's last reading and before
+the next pass is prepared, never while a pass is timed or sampled, so whatever listens cannot slow a
+measurement. A listener that throws after a pass fails that workload, as the workload throwing
+would.
 
 ## The sampler
 
@@ -256,10 +257,10 @@ console prints each workload's table as the run goes, while `json`, valid only w
 document at the end. A new reporter is a class and one entry in the table in `Reporters.cpp` that
 `make_reporter()` reads.
 
-The console marks a noisy or shared row with a symbol that a legend explains, never with color.
-Its header names the configuration and the machine, and says `unoptimized` for flags that turn
-optimization off, as OrcaSlicer's RelWithDebInfo does. `json` writes the result itself, so nothing
-folds in it.
+The console marks a noisy or shared row, and one whose stage also started without finishing, with a
+symbol that a legend explains, never with color. Its header names the configuration and the machine,
+and says `unoptimized` for flags that turn optimization off, as OrcaSlicer's RelWithDebInfo does.
+`json` writes the result itself, so nothing folds in it.
 
 `Progress` shows where a run is on stderr, apart from the report, so piping `json` never carries it.
 In a log it prints a line as each workload starts. In a terminal it redraws one line after each

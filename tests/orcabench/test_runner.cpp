@@ -528,7 +528,7 @@ TEST_CASE("a warmup pass and a run that records no timing are not sampled", "[Or
     }
 }
 
-TEST_CASE("the run reports each workload, and each pass after its last reading", "[OrcaBench][Runner]")
+TEST_CASE("the run reports each workload, each pass after its last reading, and the whole result last", "[OrcaBench][Runner]")
 {
     std::vector<std::string> calls;
     FakeEnvironment          environment(calls);
@@ -544,7 +544,7 @@ TEST_CASE("the run reports each workload, and each pass after its last reading",
             calls.push_back("read");
         return host_reading();
     };
-    Result    header;
+    Result    header, whole;
     RunEvents events;
     events.started = [&calls, &header](const Result& result) {
         calls.push_back("started");
@@ -557,17 +557,24 @@ TEST_CASE("the run reports each workload, and each pass after its last reading",
         calls.push_back("pass " + std::to_string(done.pass) + " of " + std::to_string(done.passes));
     };
     events.workload_done = [&calls](const WorkloadResult& workload) { calls.push_back("done: " + workload.name); };
+    events.finished      = [&calls, &whole](const Result& result) {
+        calls.push_back("finished");
+        whole = result;
+    };
 
     PolicyOverrides overrides;
     overrides.iterations = 1;
     const Policy policy  = Policy::resolve("quick", overrides, 1);
-    run_suite({entry_of("fake/cube"), entry_of("fake/benchy", "skips")}, policy, kinds, environment, probe, events);
+    const Result result  = run_suite({entry_of("fake/cube"), entry_of("fake/benchy", "skips")}, policy, kinds, environment, probe, events);
 
     CHECK(calls == std::vector<std::string> {"enter", "started", "workload 1 of 2: fake/cube", "setup", "prepare", "read", "execute",
                                              "read", "pass 1 of 2", "prepare", "read", "execute", "read", "pass 2 of 2",
-                                             "done: fake/cube", "workload 2 of 2: fake/benchy", "setup", "done: fake/benchy", "leave"});
+                                             "done: fake/cube", "workload 2 of 2: fake/benchy", "setup", "done: fake/benchy", "leave",
+                                             "finished"});
     CHECK(header.measurement == policy.identity());
     CHECK(header.workloads.empty());
+    CHECK(whole.workloads.size() == 2);
+    CHECK(whole.suite.duration == result.suite.duration);
 }
 
 TEST_CASE("a pass's event carries the time its execute() took", "[OrcaBench][Runner]")
