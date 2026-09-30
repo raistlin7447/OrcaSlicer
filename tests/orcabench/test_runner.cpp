@@ -425,6 +425,10 @@ TEST_CASE("the result records the policy's identity, this build and this machine
     CHECK(result.machine.os == os_description());
     CHECK(result.machine.cpu == cpu_model());
     CHECK(result.machine.logical_cores == logical_cores());
+    const std::chrono::nanoseconds step = cpu_time_step();
+    CHECK(result.machine.properties == (step > std::chrono::nanoseconds::zero()
+                                            ? Properties {{MachineProperty::cpu_time_step_ns, std::to_string(step.count())}}
+                                            : Properties {}));
     CHECK(result.suite.started_at >= before);
     CHECK(result.suite.started_at <= after);
     CHECK(result.suite.duration <= elapsed);
