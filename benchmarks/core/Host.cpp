@@ -215,4 +215,14 @@ unsigned logical_cores()
     return reported == 0 ? 1 : reported;
 }
 
+std::chrono::nanoseconds cpu_time_step()
+{
+#ifdef _WIN32
+    // GetProcessTimes charges each thread's time at the clock interrupt, every 15.625 ms by default.
+    return std::chrono::microseconds(15625);
+#else
+    return std::chrono::nanoseconds::zero();
+#endif
+}
+
 }} // namespace Slic3r::Bench

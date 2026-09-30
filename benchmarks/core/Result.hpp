@@ -95,6 +95,12 @@ struct MachineIdentity
     Properties  properties;
 };
 
+// Keys for the machine properties a run records.
+namespace MachineProperty {
+// The step in which the machine advances a thread's CPU time, in nanoseconds, where it has one.
+inline constexpr const char* cpu_time_step_ns = "cpu_time_step_ns";
+} // namespace MachineProperty
+
 // What the slicer produced, the same on every machine and thread count.
 struct WorkStats
 {

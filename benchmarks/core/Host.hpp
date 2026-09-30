@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <string>
 
@@ -30,5 +31,9 @@ std::string cpu_model();
 
 // Logical processors on this machine, which is not necessarily how many threads TBB runs.
 unsigned logical_cores();
+
+// The step in which process_cpu_ns() advances each thread's time, and zero where it counts finely
+// enough not to matter.
+std::chrono::nanoseconds cpu_time_step();
 
 }} // namespace Slic3r::Bench
