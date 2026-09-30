@@ -55,6 +55,8 @@ MachineIdentity this_machine()
     machine.os            = os_description();
     machine.cpu           = cpu_model();
     machine.logical_cores = logical_cores();
+    if (const std::chrono::nanoseconds step = cpu_time_step(); step > std::chrono::nanoseconds::zero())
+        machine.properties[MachineProperty::cpu_time_step_ns] = std::to_string(step.count());
     return machine;
 }
 
@@ -121,6 +123,9 @@ WorkloadResult run_workload(const CatalogEntry& entry, const Policy& policy, con
     const auto  threw = [&](const std::string& what) {
         return WorkloadResult::failed(entry.name, call + " threw" + when + ": " + what);
     };
+    std::optional<std::uint64_t> hash;
+    std::optional<WorkStats>     work;
+    std::vector<IterationResult> iterations;
     try {
         const std::unique_ptr<Workload> workload = kinds.create(entry);
         call = "setup()";
@@ -130,10 +135,7 @@ WorkloadResult run_workload(const CatalogEntry& entry, const Policy& policy, con
             return WorkloadResult::skipped(entry.name, *skip);
         }
 
-        std::optional<std::uint64_t> hash;
-        std::optional<WorkStats>     work;
-        std::optional<StageStates>   states;
-        std::vector<IterationResult> iterations;
+        std::optional<StageStates> states;
         // 64 bits, so the count cannot wrap whatever the policy's counts are.
         const std::uint64_t passes = std::uint64_t(policy.warmup) + policy.iterations;
         for (std::uint64_t pass = 1; pass <= passes; ++pass) {
@@ -189,12 +191,12 @@ WorkloadResult run_workload(const CatalogEntry& entry, const Policy& policy, con
             call = "pass_done";
             notify(events.pass_done, PassDone {pass, policy.warmup, passes, after.at - before.at});
         }
-        return WorkloadResult::ran(entry.name, hash, std::move(work), std::move(iterations));
     } catch (const std::exception& error) {
         return threw(error.what());
     } catch (...) {
         return threw("something that is not a std::exception");
     }
+    return WorkloadResult::ran(entry.name, hash, std::move(work), std::move(iterations));
 }
 
 } // namespace
