@@ -5,7 +5,10 @@
 #include <algorithm>
 #include <charconv>
 #include <cmath>
+#include <limits>
 #include <map>
+#include <numeric>
+#include <system_error>
 #include <utility>
 
 namespace Slic3r { namespace Bench {
@@ -50,21 +53,35 @@ Clock::duration covered(const Timeline& timeline)
 }
 
 // Whether a CPU time from this many pairs of readings could be off by more than cpu_error_limit of
-// itself, given that on Windows each of the run's threads can round by a tick per pair.
+// itself, given that each of the run's threads and the sampler's can round by a step per pair.
 bool below_floor(const Result& header, std::size_t pairs, double cpu_ns)
 {
-    if (header.machine.os.rfind("Windows", 0) != 0)
+    const std::chrono::nanoseconds step = recorded_cpu_time_step(header.machine);
+    if (step == std::chrono::nanoseconds::zero())
         return false;
-    unsigned    threads = 0;
-    const auto  found   = header.measurement.find(MeasurementKey::threads);
+    unsigned   threads = 0;
+    const auto found   = header.measurement.find(MeasurementKey::threads);
     if (found != header.measurement.end())
         std::from_chars(found->second.data(), found->second.data() + found->second.size(), threads);
     if (threads == 0)
         threads = std::max(header.machine.logical_cores, 1u);
-    return double(pairs) * threads * nanoseconds(windows_cpu_tick) > cpu_error_limit * cpu_ns;
+    return double(pairs) * (double(threads) + 1) * nanoseconds(step) > cpu_error_limit * cpu_ns;
 }
 
 } // namespace
+
+std::chrono::nanoseconds recorded_cpu_time_step(const MachineIdentity& machine)
+{
+    const auto found = machine.properties.find(MachineProperty::cpu_time_step_ns);
+    if (found == machine.properties.end())
+        return {};
+    const std::string& text  = found->second;
+    std::int64_t       count = 0;
+    const auto [end, error]  = std::from_chars(text.data(), text.data() + text.size(), count);
+    if (error != std::errc() || end != text.data() + text.size() || count < 0)
+        return {};
+    return std::chrono::nanoseconds(count);
+}
 
 WorkloadSummary summarize(const WorkloadResult& workload, const Result& header, bool verbose)
 {
@@ -87,10 +104,10 @@ WorkloadSummary summarize(const WorkloadResult& workload, const Result& header, 
     for (std::size_t i = 0; i < count; ++i) {
         const IterationResult&  iteration = workload.iterations[i];
         const Clock::time_point zero      = origin(iteration);
-        std::vector<RowKey>     keys;
+        std::vector<Tally*>     span_tallies;
         for (const StageSpan& span : iteration.timeline) {
-            keys.push_back(key_of(span.stage, span.scope));
-            Tally&                tally  = tally_of(keys.back());
+            Tally& tally = tally_of(key_of(span.stage, span.scope));
+            span_tallies.push_back(&tally);
             const Clock::duration length = span.done_at - span.started_at;
             tally.per_iteration[i] += length;
             tally.ran         = true;
@@ -103,18 +120,29 @@ WorkloadSummary summarize(const WorkloadResult& workload, const Result& header, 
                 tally.window_ns += window->second;
                 ++tally.windows;
             }
+            // The cast is undefined for a reading no count of bytes can be, which a hand-edited result may hold.
             const auto peak = span.metrics.find(SampledMetric::peak_rss_bytes);
-            if (peak != span.metrics.end())
+            if (peak != span.metrics.end() && peak->second >= 0 && peak->second < double(std::numeric_limits<std::uint64_t>::max()))
                 tally.peak_rss_bytes = std::max(tally.peak_rss_bytes.value_or(0), static_cast<std::uint64_t>(peak->second));
             summed += length;
         }
-        for (std::size_t a = 0; a < keys.size(); ++a)
-            for (std::size_t b = 0; b < keys.size(); ++b) {
-                const StageSpan& one   = iteration.timeline[a];
-                const StageSpan& other = iteration.timeline[b];
-                if (keys[a] != keys[b] && one.started_at < other.done_at && other.started_at < one.done_at)
-                    tallies[keys[a]].shared = true;
+        std::vector<std::size_t> by_start(span_tallies.size());
+        std::iota(by_start.begin(), by_start.end(), std::size_t(0));
+        std::sort(by_start.begin(), by_start.end(), [&iteration](std::size_t a, std::size_t b) {
+            return iteration.timeline[a].started_at < iteration.timeline[b].started_at;
+        });
+        for (std::size_t a = 0; a < by_start.size(); ++a) {
+            const StageSpan& one = iteration.timeline[by_start[a]];
+            for (std::size_t b = a + 1; b < by_start.size(); ++b) {
+                const StageSpan& other = iteration.timeline[by_start[b]];
+                if (other.started_at >= one.done_at)
+                    break;
+                Tally* const first  = span_tallies[by_start[a]];
+                Tally* const second = span_tallies[by_start[b]];
+                if (first != second && one.started_at < other.done_at)
+                    first->shared = second->shared = true;
             }
+        }
         for (const UnfinishedStage& stage : iteration.unfinished) {
             Tally& tally      = tally_of(key_of(stage.stage, stage.scope));
             tally.unfinished  = true;
@@ -144,6 +172,7 @@ WorkloadSummary summarize(const WorkloadResult& workload, const Result& header, 
         row.stage       = key.first;
         row.scope       = key.second;
         row.first_start = tally.first_start;
+        row.unfinished  = tally.unfinished;
         if (!tally.ran) {
             row.state = tally.unfinished ? StageState::Unfinished : StageState::NotRun;
             summary.rows.push_back(std::move(row));
@@ -180,9 +209,7 @@ WorkloadSummary summarize(const WorkloadResult& workload, const Result& header, 
 
 std::optional<OtherRow> collapse(std::vector<StageRow>& rows, double below)
 {
-    const auto folds = [below](const StageRow& row) {
-        return row.state != StageState::Unfinished && !row.significant && row.share < below;
-    };
+    const auto folds = [below](const StageRow& row) { return !row.unfinished && !row.significant && row.share < below; };
     OtherRow other;
     for (const StageRow& row : rows) {
         if (!folds(row))

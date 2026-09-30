@@ -2,6 +2,7 @@
 
 #include "core/Sampler.hpp"
 #include "core/Summary.hpp"
+#include "orcabench_test_utils.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -12,22 +13,12 @@
 #include <vector>
 
 using namespace Slic3r::Bench;
+using namespace Slic3r::Bench::Test;
 using namespace std::chrono_literals;
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
 
 namespace {
-
-StageSpan span_of(std::string stage, std::string scope, Clock::duration at, Clock::duration length, Metrics metrics = {})
-{
-    StageSpan span;
-    span.stage      = std::move(stage);
-    span.scope      = std::move(scope);
-    span.started_at = Clock::time_point {} + at;
-    span.done_at    = span.started_at + length;
-    span.metrics    = std::move(metrics);
-    return span;
-}
 
 IterationResult iteration_of(Clock::duration wall, Timeline timeline)
 {
@@ -42,17 +33,19 @@ WorkloadResult ran(std::vector<IterationResult> iterations)
     return WorkloadResult::ran("slice/idler", std::nullopt, std::nullopt, std::move(iterations));
 }
 
-// A header whose operating system and thread count decide the CPU floor, on a machine of 20 cores.
-Result header_on(std::string os, std::string threads = "20")
+// A header recorded at `threads` on a machine of 20 cores that advances CPU time in `step`, where
+// zero records no step.
+Result recorded_with(Clock::duration step, std::string threads = "20")
 {
     Result header;
-    header.machine.os                           = std::move(os);
     header.machine.logical_cores                = 20;
     header.measurement[MeasurementKey::threads] = std::move(threads);
+    if (step > Clock::duration::zero())
+        header.machine.properties[MachineProperty::cpu_time_step_ns] = std::to_string(step.count());
     return header;
 }
 
-const Result on_linux = header_on("Linux 6.8.0");
+const Result fine_grained = recorded_with(Clock::duration::zero());
 
 const StageRow& row_of(const WorkloadSummary& summary, const std::string& stage, const std::string& scope = "")
 {
@@ -74,10 +67,11 @@ WorkloadResult two_objects()
 StageRow row_with(std::string stage, double share, StageState state = StageState::Ran)
 {
     StageRow row;
-    row.stage = std::move(stage);
-    row.state = state;
-    row.share = share;
-    row.mean  = Millis(100 * share);
+    row.stage      = std::move(stage);
+    row.state      = state;
+    row.unfinished = state == StageState::Unfinished;
+    row.share      = share;
+    row.mean       = Millis(100 * share);
     return row;
 }
 
@@ -93,35 +87,35 @@ std::vector<std::string> stages_of(const std::vector<StageRow>& rows)
 
 TEST_CASE("a row sums its stage across objects in each iteration, then takes the mean and min", "[OrcaBench][Summary]")
 {
-    const WorkloadSummary summary = summarize(two_objects(), on_linux, false);
+    const WorkloadSummary summary = summarize(two_objects(), fine_grained, false);
     REQUIRE(summary.rows.size() == 2);
-    CHECK(summary.summed_work == Millis(100));
+    CHECK_THAT(summary.summed_work.count(), WithinAbs(100.0, 1e-9));
 
     const StageRow& infill = row_of(summary, "posInfill");
-    CHECK(infill.mean == Millis(35));
-    CHECK(infill.min == Millis(30));
+    CHECK_THAT(infill.mean.count(), WithinAbs(35.0, 1e-9));
+    CHECK_THAT(infill.min.count(), WithinAbs(30.0, 1e-9));
     REQUIRE(infill.cv.has_value());
     CHECK_THAT(*infill.cv, WithinRel(std::sqrt(50.0) / 35, 1e-12));
     CHECK_THAT(infill.share, WithinAbs(0.35, 1e-12));
 
     const StageRow& gcode = row_of(summary, "psGCodeExport");
-    CHECK(gcode.mean == Millis(65));
-    CHECK(gcode.min == Millis(60));
+    CHECK_THAT(gcode.mean.count(), WithinAbs(65.0, 1e-9));
+    CHECK_THAT(gcode.min.count(), WithinAbs(60.0, 1e-9));
     CHECK_THAT(gcode.share, WithinAbs(0.65, 1e-12));
 }
 
 TEST_CASE("under --verbose each scope of a stage has its own row", "[OrcaBench][Summary]")
 {
-    const WorkloadSummary summary = summarize(two_objects(), on_linux, true);
+    const WorkloadSummary summary = summarize(two_objects(), fine_grained, true);
     REQUIRE(summary.rows.size() == 3);
-    CHECK(row_of(summary, "posInfill", "object:0").mean == Millis(12.5));
-    CHECK(row_of(summary, "posInfill", "object:1").mean == Millis(22.5));
-    CHECK(row_of(summary, "psGCodeExport", "print").mean == Millis(65));
+    CHECK_THAT(row_of(summary, "posInfill", "object:0").mean.count(), WithinAbs(12.5, 1e-9));
+    CHECK_THAT(row_of(summary, "posInfill", "object:1").mean.count(), WithinAbs(22.5, 1e-9));
+    CHECK_THAT(row_of(summary, "psGCodeExport", "print").mean.count(), WithinAbs(65.0, 1e-9));
 }
 
 TEST_CASE("a row has no CV with one iteration", "[OrcaBench][Summary]")
 {
-    const WorkloadSummary summary = summarize(ran({iteration_of(10ms, {span_of("posSlice", "object:0", 0ms, 5ms)})}), on_linux, false);
+    const WorkloadSummary summary = summarize(ran({iteration_of(10ms, {span_of("posSlice", "object:0", 0ms, 5ms)})}), fine_grained, false);
     CHECK_FALSE(row_of(summary, "posSlice").cv.has_value());
 }
 
@@ -130,10 +124,10 @@ TEST_CASE("the wall envelope is the mean wall time, and unaccounted the time no 
     // Two objects side by side, so the spans add up to more time than they cover.
     const Timeline spans {span_of("posInfill", "object:0", 0ms, 30ms), span_of("posPerimeters", "object:1", 10ms, 40ms),
                           span_of("psGCodeExport", "print", 60ms, 30ms)};
-    const WorkloadSummary summary = summarize(ran({iteration_of(100ms, spans), iteration_of(120ms, spans)}), on_linux, false);
-    CHECK(summary.summed_work == Millis(100));
-    CHECK(summary.wall == Millis(110));
-    CHECK(summary.unaccounted == Millis(30));
+    const WorkloadSummary summary = summarize(ran({iteration_of(100ms, spans), iteration_of(120ms, spans)}), fine_grained, false);
+    CHECK_THAT(summary.summed_work.count(), WithinAbs(100.0, 1e-9));
+    CHECK_THAT(summary.wall.count(), WithinAbs(110.0, 1e-9));
+    CHECK_THAT(summary.unaccounted.count(), WithinAbs(30.0, 1e-9));
 }
 
 TEST_CASE("each stage is in one of four states", "[OrcaBench][Summary]")
@@ -142,18 +136,29 @@ TEST_CASE("each stage is in one of four states", "[OrcaBench][Summary]")
         iteration_of(10ms, {span_of("posSlice", "object:0", 0ms, 5ms), span_of("posContouring", "object:0", 5ms, 0ms)});
     iteration.unfinished      = {{"posEstimateCurledExtrusions", "object:0", Clock::time_point {} + 6ms}};
     iteration.not_run         = {{"posSimplifySupportPath", "object:0"}};
-    const WorkloadSummary summary = summarize(ran({iteration}), on_linux, false);
+    const WorkloadSummary summary = summarize(ran({iteration}), fine_grained, false);
     CHECK(row_of(summary, "posSlice").state == StageState::Ran);
     CHECK(row_of(summary, "posContouring").state == StageState::Instant);
     CHECK(row_of(summary, "posEstimateCurledExtrusions").state == StageState::Unfinished);
+    CHECK(row_of(summary, "posEstimateCurledExtrusions").unfinished);
     CHECK(row_of(summary, "posSimplifySupportPath").state == StageState::NotRun);
+    CHECK_FALSE(row_of(summary, "posSlice").unfinished);
+}
+
+TEST_CASE("a stage that ran in one scope and never finished in another is a stage that ran, marked unfinished", "[OrcaBench][Summary]")
+{
+    IterationResult iteration = iteration_of(10ms, {span_of("posEstimateCurledExtrusions", "object:1", 0ms, 3ms)});
+    iteration.unfinished      = {{"posEstimateCurledExtrusions", "object:0", Clock::time_point {} + 1ms}};
+    const StageRow& row       = row_of(summarize(ran({iteration}), fine_grained, false), "posEstimateCurledExtrusions");
+    CHECK(row.state == StageState::Ran);
+    CHECK(row.unfinished);
 }
 
 TEST_CASE("a stage is instant only when every span of it took no time", "[OrcaBench][Summary]")
 {
     const WorkloadSummary summary = summarize(ran({iteration_of(10ms, {span_of("posContouring", "object:0", 0ms, 1us)}),
                                                    iteration_of(10ms, {span_of("posContouring", "object:0", 0ms, 0ms)})}),
-                                              on_linux, false);
+                                              fine_grained, false);
     CHECK(row_of(summary, "posContouring").state == StageState::Ran);
 }
 
@@ -163,11 +168,11 @@ TEST_CASE("a stage that ran in one scope is a stage that ran, though each scope 
     iteration.not_run         = {{"posSupportMaterial", "object:0"}};
     const WorkloadResult workload = ran({iteration});
 
-    const WorkloadSummary merged = summarize(workload, on_linux, false);
+    const WorkloadSummary merged = summarize(workload, fine_grained, false);
     CHECK(row_of(merged, "posSupportMaterial").state == StageState::Ran);
-    CHECK(row_of(merged, "posSupportMaterial").mean == Millis(3));
+    CHECK_THAT(row_of(merged, "posSupportMaterial").mean.count(), WithinAbs(3.0, 1e-9));
 
-    const WorkloadSummary verbose = summarize(workload, on_linux, true);
+    const WorkloadSummary verbose = summarize(workload, fine_grained, true);
     CHECK(row_of(verbose, "posSupportMaterial", "object:0").state == StageState::NotRun);
     CHECK(row_of(verbose, "posSupportMaterial", "object:1").state == StageState::Ran);
 }
@@ -180,7 +185,7 @@ TEST_CASE("a row's first start is its earliest offset from its iteration's origi
         iteration_of(200ms, {span_of("posSlice", "object:0", 100ms, 10ms), span_of("posInfill", "object:0", 125ms, 10ms)});
     second.unfinished = {{"posEstimateCurledExtrusions", "object:0", Clock::time_point {} + 160ms}};
     second.not_run    = {{"posContouring", "object:0"}};
-    const WorkloadSummary summary = summarize(ran({first, second}), on_linux, false);
+    const WorkloadSummary summary = summarize(ran({first, second}), fine_grained, false);
     CHECK(row_of(summary, "posSlice").first_start == 0ms);
     CHECK(row_of(summary, "posInfill").first_start == 25ms);
     CHECK(row_of(summary, "posEstimateCurledExtrusions").first_start == 60ms);
@@ -193,16 +198,27 @@ TEST_CASE("a row's CPU is its CPU time over its windows, and its peak its highes
     const Metrics second = {{SampledMetric::cpu_ns, 50e6}, {SampledMetric::cpu_window_ns, 10e6}, {SampledMetric::peak_rss_bytes, 700}};
     const WorkloadSummary summary = summarize(ran({iteration_of(20ms, {span_of("posInfill", "object:0", 0ms, 12ms, first)}),
                                                    iteration_of(20ms, {span_of("posInfill", "object:0", 0ms, 12ms, second)})}),
-                                              on_linux, false);
+                                              fine_grained, false);
     const StageRow& infill = row_of(summary, "posInfill");
     REQUIRE(infill.cpu.has_value());
     CHECK_THAT(*infill.cpu, WithinAbs(4.0, 1e-12));
     CHECK(infill.peak_rss_bytes == std::optional<std::uint64_t>(700));
 }
 
+TEST_CASE("a row leaves out a peak reading that no count of bytes can be", "[OrcaBench][Summary]")
+{
+    const double peak = GENERATE(-1.0, 1e20);
+    CAPTURE(peak);
+    const Metrics         readings = {{SampledMetric::peak_rss_bytes, peak}};
+    const WorkloadSummary summary =
+        summarize(ran({iteration_of(20ms, {span_of("posInfill", "object:0", 0ms, 12ms, readings)})}), fine_grained, false);
+    CHECK_FALSE(row_of(summary, "posInfill").peak_rss_bytes.has_value());
+}
+
 TEST_CASE("a row without sampled readings has no CPU and no peak", "[OrcaBench][Summary]")
 {
-    const WorkloadSummary summary = summarize(ran({iteration_of(20ms, {span_of("posInfill", "object:0", 0ms, 12ms)})}), on_linux, false);
+    const WorkloadSummary summary =
+        summarize(ran({iteration_of(20ms, {span_of("posInfill", "object:0", 0ms, 12ms)})}), fine_grained, false);
     const StageRow&       infill  = row_of(summary, "posInfill");
     CHECK_FALSE(infill.cpu.has_value());
     CHECK_FALSE(infill.cpu_below_floor);
@@ -214,21 +230,21 @@ TEST_CASE("nothing is divided by a total of no time", "[OrcaBench][Summary]")
     SECTION("spans that all took no time give their rows no share")
     {
         const WorkloadSummary summary =
-            summarize(ran({iteration_of(10ms, {span_of("posContouring", "object:0", 0ms, 0ms)})}), on_linux, false);
-        CHECK(row_of(summary, "posContouring").share == 0.0);
+            summarize(ran({iteration_of(10ms, {span_of("posContouring", "object:0", 0ms, 0ms)})}), fine_grained, false);
+        CHECK_THAT(row_of(summary, "posContouring").share, WithinAbs(0.0, 0.0));
     }
     SECTION("CPU time read over no time gives no CPU")
     {
         const Metrics         readings = {{SampledMetric::cpu_ns, 1e6}, {SampledMetric::cpu_window_ns, 0.0}};
         const WorkloadSummary summary =
-            summarize(ran({iteration_of(10ms, {span_of("posInfill", "object:0", 0ms, 5ms, readings)})}), on_linux, false);
+            summarize(ran({iteration_of(10ms, {span_of("posInfill", "object:0", 0ms, 5ms, readings)})}), fine_grained, false);
         CHECK_FALSE(row_of(summary, "posInfill").cpu.has_value());
     }
     SECTION("passes that took no time give the workload no CPU")
     {
         IterationResult iteration = iteration_of(0ms, {});
         iteration.cpu             = 5ms;
-        CHECK_FALSE(summarize(ran({iteration}), on_linux, false).cpu.has_value());
+        CHECK_FALSE(summarize(ran({iteration}), fine_grained, false).cpu.has_value());
     }
 }
 
@@ -239,7 +255,7 @@ TEST_CASE("a row whose span overlaps a span outside it is marked shared", "[Orca
         const WorkloadSummary summary = summarize(ran({iteration_of(100ms, {span_of("posInfill", "object:0", 0ms, 30ms),
                                                                             span_of("posPerimeters", "object:1", 10ms, 30ms),
                                                                             span_of("psGCodeExport", "print", 40ms, 20ms)})}),
-                                                  on_linux, false);
+                                                  fine_grained, false);
         CHECK(row_of(summary, "posInfill").shared);
         CHECK(row_of(summary, "posPerimeters").shared);
         // It starts as posPerimeters ends, which is not an overlap.
@@ -249,26 +265,58 @@ TEST_CASE("a row whose span overlaps a span outside it is marked shared", "[Orca
     {
         const WorkloadResult workload =
             ran({iteration_of(100ms, {span_of("posInfill", "object:0", 0ms, 30ms), span_of("posInfill", "object:1", 5ms, 20ms)})});
-        CHECK_FALSE(row_of(summarize(workload, on_linux, false), "posInfill").shared);
-        CHECK(row_of(summarize(workload, on_linux, true), "posInfill", "object:0").shared);
+        CHECK_FALSE(row_of(summarize(workload, fine_grained, false), "posInfill").shared);
+        CHECK(row_of(summarize(workload, fine_grained, true), "posInfill", "object:0").shared);
+    }
+    SECTION("a long span that outlasts the spans after it, recorded as each one finished")
+    {
+        const WorkloadSummary summary = summarize(ran({iteration_of(100ms, {span_of("posPerimeters", "object:1", 10ms, 10ms),
+                                                                            span_of("posSupportMaterial", "object:1", 50ms, 10ms),
+                                                                            span_of("posInfill", "object:0", 0ms, 100ms)})}),
+                                                  fine_grained, false);
+        CHECK(row_of(summary, "posPerimeters").shared);
+        CHECK(row_of(summary, "posSupportMaterial").shared);
+        CHECK(row_of(summary, "posInfill").shared);
+    }
+    SECTION("a span that took no time as another starts, which shares nothing")
+    {
+        const WorkloadSummary summary = summarize(
+            ran({iteration_of(100ms, {span_of("posInfill", "object:0", 0ms, 30ms), span_of("posContouring", "object:0", 0ms, 0ms)})}),
+            fine_grained, false);
+        CHECK_FALSE(row_of(summary, "posInfill").shared);
+        CHECK_FALSE(row_of(summary, "posContouring").shared);
     }
 }
 
-TEST_CASE("CPU recorded on Windows shows only when the tick's rounding is at most a tenth of it", "[OrcaBench][Summary]")
+TEST_CASE("a recorded CPU time step is read only from a whole count of nanoseconds", "[OrcaBench][Summary]")
 {
-    // At 20 threads the rounding is 312.5 ms, and at one thread 15.625 ms.
-    const auto [os, threads, cpu_ms, shown] = GENERATE(table<std::string, std::string, double, bool>({
-        {"Windows 10.0.26200", "1", 200.0, true},
-        {"Windows 10.0.26200", "1", 100.0, false},
-        {"Windows 10.0.26200", "20", 4000.0, true},
-        {"Windows 10.0.26200", "20", 2000.0, false},
-        {"Windows 10.0.26200", "", 2000.0, false},
-        {"Linux 6.8.0", "20", 1.0, true},
+    const auto [text, nanoseconds] = GENERATE(table<std::string, long long>({
+        {"15625000", 15625000},
+        {"15625000 ns", 0},
+        {"-15625000", 0},
+        {"", 0},
     }));
-    CAPTURE(os, threads, cpu_ms);
+    CAPTURE(text);
+    MachineIdentity machine;
+    machine.properties[MachineProperty::cpu_time_step_ns] = text;
+    CHECK(recorded_cpu_time_step(machine) == std::chrono::nanoseconds(nanoseconds));
+}
+
+TEST_CASE("CPU shows only when the recorded step's rounding is at most a tenth of it", "[OrcaBench][Summary]")
+{
+    // The run's threads and the sampler's each round by a step, 328.125 ms at 20 threads and 31.25 ms at one.
+    const auto [step, threads, cpu_ms, shown] = GENERATE(table<Clock::duration, std::string, double, bool>({
+        {15625us, "1", 400.0, true},
+        {15625us, "1", 200.0, false},
+        {15625us, "20", 4000.0, true},
+        {15625us, "20", 3200.0, false},
+        {15625us, "", 2000.0, false},
+        {0us, "20", 1.0, true},
+    }));
+    CAPTURE(step, threads, cpu_ms);
     const Metrics readings = {{SampledMetric::cpu_ns, cpu_ms * 1e6}, {SampledMetric::cpu_window_ns, 1e9}};
     const WorkloadSummary summary =
-        summarize(ran({iteration_of(2s, {span_of("posInfill", "object:0", 0ms, 1s, readings)})}), header_on(os, threads), false);
+        summarize(ran({iteration_of(2s, {span_of("posInfill", "object:0", 0ms, 1s, readings)})}), recorded_with(step, threads), false);
     const StageRow& infill = row_of(summary, "posInfill");
     CHECK(infill.cpu.has_value() == shown);
     CHECK(infill.cpu_below_floor == !shown);
@@ -283,13 +331,13 @@ TEST_CASE("a workload's CPU is its CPU time over its wall time, floored the same
         second.cpu             = second_cpu;
         return ran({first, second});
     };
-    const WorkloadSummary on_linux_summary = summarize(run(8s, 6s), on_linux, false);
-    REQUIRE(on_linux_summary.cpu.has_value());
-    CHECK_THAT(*on_linux_summary.cpu, WithinAbs(7.0, 1e-12));
+    const WorkloadSummary fine_grained_summary = summarize(run(8s, 6s), fine_grained, false);
+    REQUIRE(fine_grained_summary.cpu.has_value());
+    CHECK_THAT(*fine_grained_summary.cpu, WithinAbs(7.0, 1e-12));
 
-    const Result windows = header_on("Windows 10.0.26200");
-    CHECK(summarize(run(8s, 6s), windows, false).cpu.has_value());
-    const WorkloadSummary floored = summarize(run(2s, 2s), windows, false);
+    const Result stepped = recorded_with(15625us);
+    CHECK(summarize(run(8s, 6s), stepped, false).cpu.has_value());
+    const WorkloadSummary floored = summarize(run(2s, 2s), stepped, false);
     CHECK_FALSE(floored.cpu.has_value());
     CHECK(floored.cpu_below_floor);
 }
@@ -300,8 +348,8 @@ TEST_CASE("a workload's peak memory is its highest iteration's", "[OrcaBench][Su
     iterations[0].peak_rss_bytes = 100;
     iterations[1].peak_rss_bytes = 300;
     iterations[2].peak_rss_bytes = 200;
-    CHECK(summarize(ran(iterations), on_linux, false).peak_rss_bytes == std::optional<std::uint64_t>(300));
-    CHECK_FALSE(summarize(ran({iteration_of(1s, {})}), on_linux, false).peak_rss_bytes.has_value());
+    CHECK(summarize(ran(iterations), fine_grained, false).peak_rss_bytes == std::optional<std::uint64_t>(300));
+    CHECK_FALSE(summarize(ran({iteration_of(1s, {})}), fine_grained, false).peak_rss_bytes.has_value());
 }
 
 TEST_CASE("a row under the threshold folds into the other row, and one at it stays", "[OrcaBench][Summary]")
@@ -327,16 +375,18 @@ TEST_CASE("the other row counts the stages that never ran", "[OrcaBench][Summary
     CHECK(other->not_run == 1);
 }
 
-TEST_CASE("a stage that never finished and a significant row never fold", "[OrcaBench][Summary]")
+TEST_CASE("a row that never finished somewhere and a significant row never fold", "[OrcaBench][Summary]")
 {
+    StageRow partly = row_with("posSupportMaterial", 0.002);
+    partly.unfinished = true;
     StageRow significant = row_with("posSlice", 0.002);
     significant.significant = true;
-    std::vector<StageRow> rows {row_with("posEstimateCurledExtrusions", 0, StageState::Unfinished), significant,
-                                row_with("posPerimeters", 0.002), row_with("posInfill", 0.996)};
+    std::vector<StageRow> rows {row_with("posEstimateCurledExtrusions", 0, StageState::Unfinished), partly, significant,
+                                row_with("posPerimeters", 0.002), row_with("posInfill", 0.994)};
     const std::optional<OtherRow> other = collapse(rows, 0.01);
     REQUIRE(other.has_value());
     CHECK(other->stages == 1);
-    CHECK(stages_of(rows) == std::vector<std::string> {"posEstimateCurledExtrusions", "posSlice", "posInfill"});
+    CHECK(stages_of(rows) == std::vector<std::string> {"posEstimateCurledExtrusions", "posSupportMaterial", "posSlice", "posInfill"});
 }
 
 TEST_CASE("no other row is made when nothing is under the threshold", "[OrcaBench][Summary]")
