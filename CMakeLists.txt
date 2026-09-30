@@ -293,6 +293,9 @@ endif ()
 option(SLIC3R_BUILD_SANDBOXES   "Build development sandboxes" OFF)
 option(BUILD_TESTS       "Build unit tests" OFF)
 option(ORCA_TOOLS       "Build Orca tools" OFF)
+# Defaults to BUILD_TESTS in a new build directory, and the build scripts turn it on with the tests, so
+# the test builds they make, CI's included, compile and test the framework.
+option(ORCA_BENCHMARKS   "Build the slicing benchmark framework" ${BUILD_TESTS})
 
 if (FLATPAK)
     set(SLIC3R_FHS ON CACHE BOOL "" FORCE)
@@ -1271,6 +1274,22 @@ elseif (MSVC AND NOT IS_CLANG_CL)
     add_compile_options(/W3 /we4715)
 endif ()
 
+# The commit header the slicer and the benchmarks both include.
+set(ORCA_GIT_COMMIT_HASH_DIR "${CMAKE_BINARY_DIR}/git_commit_hash")
+set(_git_commit_hash_globbed)
+if (ORCA_BENCHMARKS)
+    # orca_bench compiles its kinds by glob, so an untracked one makes the build dirty too.
+    set(_git_commit_hash_globbed "-DGLOBBED_DIRS=benchmarks/kinds")
+endif ()
+add_custom_target(git_commit_hash_header
+    BYPRODUCTS "${ORCA_GIT_COMMIT_HASH_DIR}/git_commit_hash.h"
+    COMMAND ${CMAKE_COMMAND}
+        "-DSOURCE_DIR=${CMAKE_SOURCE_DIR}"
+        "-DOUT_FILE=${ORCA_GIT_COMMIT_HASH_DIR}/git_commit_hash.h"
+        ${_git_commit_hash_globbed}
+        -P "${CMAKE_SOURCE_DIR}/cmake/modules/GitCommitHash.cmake"
+    COMMENT "Resolving the git commit hash")
+
 add_subdirectory(src)
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT OrcaSlicer_app_gui)
 
@@ -1278,6 +1297,10 @@ add_dependencies(gettext_make_pot hintsToPot)
 
 if(SLIC3R_BUILD_SANDBOXES)
     add_subdirectory(sandboxes)
+endif()
+
+if(ORCA_BENCHMARKS)
+    add_subdirectory(benchmarks)
 endif()
 
 if(BUILD_TESTS)
