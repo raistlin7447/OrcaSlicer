@@ -2,6 +2,7 @@
 
 #include "core/Host.hpp"
 
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -71,6 +72,15 @@ TEST_CASE("machine identity is the same on every call", "[OrcaBench][Host]")
     CHECK(os_description() == os_description());
     CHECK(cpu_model() == cpu_model());
     CHECK(logical_cores() == logical_cores());
+}
+
+TEST_CASE("CPU time advances in clock ticks on Windows and finely elsewhere", "[OrcaBench][Host]")
+{
+#ifdef _WIN32
+    CHECK(cpu_time_step() == std::chrono::microseconds(15625));
+#else
+    CHECK(cpu_time_step() == std::chrono::nanoseconds::zero());
+#endif
 }
 
 TEST_CASE("identity strings have no padding or embedded nulls", "[OrcaBench][Host]")
