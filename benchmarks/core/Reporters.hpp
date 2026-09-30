@@ -1,0 +1,75 @@
+#pragma once
+
+#include "core/Result.hpp"
+#include "core/Runner.hpp"
+#include "core/Summary.hpp"
+
+#include <cstddef>
+#include <functional>
+#include <iosfwd>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace Slic3r { namespace Bench {
+
+enum class SortBy { Time, Start };
+
+// How the console lays out a run, which json and null ignore.
+struct ReportOptions
+{
+    double collapse_below = collapse_share;
+    bool   verbose        = false;
+    SortBy sort_by        = SortBy::Time;
+};
+
+// Turns a run into what orca_bench prints, fed the identities before the first workload, each
+// workload as it finishes and the whole result at the end.
+class Reporter
+{
+public:
+    virtual ~Reporter() = default;
+
+    virtual void started(const Result& header)            = 0;
+    virtual void workload(const WorkloadResult& workload) = 0;
+    virtual void finished(const Result& result)           = 0;
+};
+
+std::vector<std::string> reporter_names();
+
+// Throws std::invalid_argument for a name reporter_names() does not list.
+std::unique_ptr<Reporter> make_reporter(std::string_view name, std::ostream& out, const ReportOptions& options);
+
+// Feeds a finished result through a reporter the way a run does.
+void report(Reporter& reporter, const Result& result);
+
+// The line that shows where a run is, redrawn after each pass in a terminal and printed once per
+// workload in a log.
+class Progress
+{
+public:
+    Progress(std::ostream& out, bool terminal, std::function<Clock::time_point()> now = Clock::now);
+
+    void workload_started(std::size_t index, std::size_t count, const std::string& name);
+    void pass_done(const PassDone& pass);
+
+    // Erases a redrawn line, so the report can print where it was.
+    void clear();
+
+private:
+    void draw(const std::string& line);
+
+    std::ostream&                      m_out;
+    bool                               m_terminal;
+    std::function<Clock::time_point()> m_now;
+    std::string                        m_workload;
+    Clock::time_point                  m_workload_started {};
+    std::size_t                        m_drawn = 0;
+};
+
+// The events that feed a reporter and, when given one, a progress line it clears before each
+// workload is reported.
+RunEvents report_events(Reporter& reporter, Progress* progress);
+
+}} // namespace Slic3r::Bench

@@ -5,6 +5,7 @@ add_library(orcabench_core STATIC
     core/Measurement.cpp
     core/Options.cpp
     core/Policy.cpp
+    core/Reporters.cpp
     core/Result.cpp
     core/Runner.cpp
     core/Sampler.cpp

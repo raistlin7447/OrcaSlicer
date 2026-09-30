@@ -155,6 +155,12 @@ the policy collects them, and a timed pass becomes an iteration only when wall t
 so `verify` records its hash and no iterations. The sampler adds each iteration's peak memory and
 each span's readings.
 
+The Runner reports as it runs through `RunEvents`: the run starting, each workload starting and
+finishing, and each pass finishing with the time `execute()` took. They fire after a pass's last
+reading and before the next pass is prepared, never while a pass is timed or sampled, so whatever
+listens cannot slow a measurement. A listener that throws after a pass fails that workload, as the
+workload throwing would.
+
 ## The sampler
 
 `Sampler.cpp` reads the process every 5 ms on its own thread through each timed pass, taking its
@@ -237,9 +243,29 @@ overlapped another row's, since its readings then include that work. On a result
 Windows, a CPU figure is left out when the worst-case rounding of its readings, the recorded thread
 count times the 15.6 ms tick per pair, exceeds a tenth of the CPU time it shows.
 
+## The reporters
+
+A `Reporter` turns a run into what `orca_bench` prints. `console` is for people, `json` for anything
+that reads results, and `null` for a run whose output nobody reads. A reporter is fed the identities
+before the first workload, each workload as it finishes and the whole result at the end, so the
+console prints each workload's table as the run goes, while `json`, valid only whole, writes the
+document at the end. A new reporter is a class and one entry in the table in `Reporters.cpp` that
+`make_reporter()` reads.
+
+The console marks a noisy or shared row with a symbol that a legend explains, never with color.
+Its header names the configuration and the machine, and says `unoptimized` for flags that turn
+optimization off, as OrcaSlicer's RelWithDebInfo does. `json` writes the result itself, so nothing
+folds in it.
+
+`Progress` shows where a run is on stderr, apart from the report, so piping `json` never carries it.
+In a log it prints a line as each workload starts. In a terminal it redraws one line after each
+pass, with the time the pass took and the time the workload has left at its pace so far, and erases
+it before the workload's table prints.
+
 ## Tests
 
 `tests/data/orcabench/result_v1.json` is written by hand from the schema and is never regenerated
-from the writer, which would make the golden test agree with whatever the writer does. The
-document tests compare text with the whitespace between tokens removed, so a change in indentation
-alone does not fail them. Every refusal above has a test that fails without it.
+from the writer, which would make the golden test agree with whatever the writer does, and the
+console's expected text is written by hand for the same reason. The document tests compare text
+with the whitespace between tokens removed, so a change in indentation alone does not fail them.
+Every refusal above has a test that fails without it.

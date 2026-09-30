@@ -523,3 +523,100 @@ TEST_CASE("a warmup pass and a run that records no timing are not sampled", "[Or
         CHECK(process.reads == 2);
     }
 }
+
+TEST_CASE("the run reports each workload, and each pass after its last reading", "[OrcaBench][Runner]")
+{
+    std::vector<std::string> calls;
+    FakeEnvironment          environment(calls);
+    WorkloadKinds            kinds = fake_kinds({}, calls);
+    FakeHooks                skip;
+    skip.setup = [](const RunContext&) { return std::optional<std::string>("fixture not available"); };
+    add_fake(kinds, "skips", skip, &calls);
+
+    // Logs the Runner's own readings, since the sampler's thread would race the log.
+    const std::thread::id runner = std::this_thread::get_id();
+    const ProcessProbe    probe  = [&calls, runner]() {
+        if (std::this_thread::get_id() == runner)
+            calls.push_back("read");
+        return host_reading();
+    };
+    Result    header;
+    RunEvents events;
+    events.started = [&calls, &header](const Result& result) {
+        calls.push_back("started");
+        header = result;
+    };
+    events.workload_started = [&calls](std::size_t index, std::size_t count, const std::string& name) {
+        calls.push_back("workload " + std::to_string(index) + " of " + std::to_string(count) + ": " + name);
+    };
+    events.pass_done = [&calls](const PassDone& done) {
+        calls.push_back("pass " + std::to_string(done.pass) + " of " + std::to_string(done.passes));
+    };
+    events.workload_done = [&calls](const WorkloadResult& workload) { calls.push_back("done: " + workload.name); };
+
+    PolicyOverrides overrides;
+    overrides.iterations = 1;
+    const Policy policy  = Policy::resolve("quick", overrides, 1);
+    run_suite({entry_of("fake/cube"), entry_of("fake/benchy", "skips")}, policy, kinds, environment, probe, events);
+
+    CHECK(calls == std::vector<std::string> {"enter", "started", "workload 1 of 2: fake/cube", "setup", "prepare", "read", "execute",
+                                             "read", "pass 1 of 2", "prepare", "read", "execute", "read", "pass 2 of 2",
+                                             "done: fake/cube", "workload 2 of 2: fake/benchy", "setup", "done: fake/benchy", "leave"});
+    CHECK(header.measurement == policy.identity());
+    CHECK(header.workloads.empty());
+}
+
+TEST_CASE("a pass's event carries the time its execute() took", "[OrcaBench][Runner]")
+{
+    std::vector<Clock::duration> walls;
+    RunEvents                    events;
+    events.pass_done = [&walls](const PassDone& done) {
+        if (done.pass > done.warmups)
+            walls.push_back(done.wall);
+    };
+    FakeHooks hooks;
+    hooks.execute = report;
+    std::vector<std::string> calls;
+    FakeEnvironment          environment(calls);
+    const Result result = run_suite({entry_of("fake/cube")}, quick(), fake_kinds(hooks, calls), environment, host_reading, events);
+
+    REQUIRE(result.workloads.size() == 1);
+    const std::vector<IterationResult>& iterations = result.workloads.front().iterations;
+    REQUIRE(walls.size() == iterations.size());
+    for (std::size_t i = 0; i < walls.size(); ++i)
+        CHECK(walls[i] == iterations[i].wall);
+}
+
+TEST_CASE("a run counts only the workloads its policy admits", "[OrcaBench][Runner]")
+{
+    CatalogEntry micro = entry_of("fake/micro");
+    micro.tier         = Tier::Micro;
+    std::vector<std::string> started;
+    RunEvents                events;
+    events.workload_started = [&started](std::size_t index, std::size_t count, const std::string& name) {
+        started.push_back(std::to_string(index) + " of " + std::to_string(count) + ": " + name);
+    };
+    std::vector<std::string> calls;
+    FakeEnvironment          environment(calls);
+    run_suite({micro, entry_of("fake/macro")}, Policy::resolve("pgo", {}, 1), fake_kinds({}, calls), environment, host_reading, events);
+    CHECK(started == std::vector<std::string> {"1 of 1: fake/macro"});
+}
+
+TEST_CASE("a listener that throws after a pass fails only that workload", "[OrcaBench][Runner]")
+{
+    bool      thrown = false;
+    RunEvents events;
+    events.pass_done = [&thrown](const PassDone&) {
+        if (!std::exchange(thrown, true))
+            throw std::runtime_error("the console is gone");
+    };
+    std::vector<std::string> calls;
+    FakeEnvironment          environment(calls);
+    const Result result = run_suite({entry_of("fake/cube"), entry_of("fake/cylinder")}, quick(), fake_kinds({}, calls), environment,
+                                    host_reading, events);
+
+    REQUIRE(result.workloads.size() == 2);
+    CHECK(result.workloads[0].outcome == Outcome::Failed);
+    CHECK(result.workloads[0].reason == "pass_done threw on warmup pass 1: the console is gone");
+    CHECK(result.workloads[1].outcome == Outcome::Ran);
+}
