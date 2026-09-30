@@ -216,6 +216,27 @@ an integer that is fractional or too big for its field and a span that would end
 time the clock can hold. Both throw `DocumentError`, and the reader converts the parser's own
 exceptions to it, so no caller needs nlohmann to catch them.
 
+## The stage table
+
+`Summary.cpp` turns a workload's iterations into rows of stages and totals. A stage's row sums its
+spans across objects within each iteration, then takes the mean, the minimum and the coefficient of
+variation over the iterations, and its share is its mean over summed work, the sum of the rows. In
+verbose mode each scope gets its own row. The wall envelope is the mean iteration wall time, and
+unaccounted is the mean time no span covers, so objects slicing side by side can take summed work
+past the wall envelope but cannot make unaccounted negative. Each row carries its stage's state, so
+the four stay apart.
+
+`collapse()` folds the rows under 1% of summed work into one other row, which counts the stages that
+never ran. A stage that never finished never folds, since the time it hides lands in unaccounted,
+and neither does a row marked significant, so a change that matters stays visible however small the
+stage. A row whose CV exceeds the 3% significance bar is noisy, since a change that size there
+cannot be told from noise.
+
+Each row also carries its sampled CPU and peak memory, and is marked shared when its spans
+overlapped another row's, since its readings then include that work. On a result recorded on
+Windows, a CPU figure is left out when the worst-case rounding of its readings, the recorded thread
+count times the 15.6 ms tick per pair, exceeds a tenth of the CPU time it shows.
+
 ## Tests
 
 `tests/data/orcabench/result_v1.json` is written by hand from the schema and is never regenerated

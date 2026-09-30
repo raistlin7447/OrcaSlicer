@@ -1,0 +1,202 @@
+#include "core/Summary.hpp"
+
+#include "core/Sampler.hpp"
+
+#include <algorithm>
+#include <charconv>
+#include <cmath>
+#include <map>
+#include <utility>
+
+namespace Slic3r { namespace Bench {
+
+namespace {
+
+using RowKey = std::pair<std::string, std::string>;
+
+// What summarize() gathers for one row across the iterations.
+struct Tally
+{
+    std::vector<Clock::duration> per_iteration;
+    bool                         ran        = false;
+    bool                         instant    = true;
+    bool                         unfinished = false;
+    bool                         shared     = false;
+    double                       cpu_ns     = 0.0;
+    double                       window_ns  = 0.0;
+    std::size_t                  windows    = 0;
+    std::optional<std::uint64_t> peak_rss_bytes;
+    Clock::duration              first_start = Clock::duration::max();
+};
+
+double nanoseconds(Clock::duration duration) { return std::chrono::duration<double, std::nano>(duration).count(); }
+
+// The time any span covers, counting time that spans share once.
+Clock::duration covered(const Timeline& timeline)
+{
+    std::vector<std::pair<Clock::time_point, Clock::time_point>> spans;
+    for (const StageSpan& span : timeline)
+        spans.emplace_back(span.started_at, span.done_at);
+    std::sort(spans.begin(), spans.end());
+    Clock::duration   total {};
+    Clock::time_point reached = Clock::time_point::min();
+    for (const auto& [started_at, done_at] : spans) {
+        const Clock::time_point from = std::max(started_at, reached);
+        if (done_at > from)
+            total += done_at - from;
+        reached = std::max(reached, done_at);
+    }
+    return total;
+}
+
+// Whether a CPU time from this many pairs of readings could be off by more than cpu_error_limit of
+// itself, given that on Windows each of the run's threads can round by a tick per pair.
+bool below_floor(const Result& header, std::size_t pairs, double cpu_ns)
+{
+    if (header.machine.os.rfind("Windows", 0) != 0)
+        return false;
+    unsigned    threads = 0;
+    const auto  found   = header.measurement.find(MeasurementKey::threads);
+    if (found != header.measurement.end())
+        std::from_chars(found->second.data(), found->second.data() + found->second.size(), threads);
+    if (threads == 0)
+        threads = std::max(header.machine.logical_cores, 1u);
+    return double(pairs) * threads * nanoseconds(windows_cpu_tick) > cpu_error_limit * cpu_ns;
+}
+
+} // namespace
+
+WorkloadSummary summarize(const WorkloadResult& workload, const Result& header, bool verbose)
+{
+    WorkloadSummary   summary;
+    const std::size_t count = workload.iterations.size();
+    if (count == 0)
+        return summary;
+
+    std::map<RowKey, Tally> tallies;
+    const auto              key_of = [verbose](const std::string& stage, const std::string& scope) {
+        return RowKey(stage, verbose ? scope : std::string());
+    };
+    const auto tally_of = [&tallies, count](const RowKey& key) -> Tally& {
+        Tally& tally = tallies[key];
+        tally.per_iteration.resize(count);
+        return tally;
+    };
+
+    Clock::duration summed {}, wall {}, uncovered {}, cpu {};
+    for (std::size_t i = 0; i < count; ++i) {
+        const IterationResult&  iteration = workload.iterations[i];
+        const Clock::time_point zero      = origin(iteration);
+        std::vector<RowKey>     keys;
+        for (const StageSpan& span : iteration.timeline) {
+            keys.push_back(key_of(span.stage, span.scope));
+            Tally&                tally  = tally_of(keys.back());
+            const Clock::duration length = span.done_at - span.started_at;
+            tally.per_iteration[i] += length;
+            tally.ran         = true;
+            tally.instant     = tally.instant && length == Clock::duration::zero();
+            tally.first_start = std::min(tally.first_start, span.started_at - zero);
+            const auto used   = span.metrics.find(SampledMetric::cpu_ns);
+            const auto window = span.metrics.find(SampledMetric::cpu_window_ns);
+            if (used != span.metrics.end() && window != span.metrics.end()) {
+                tally.cpu_ns += used->second;
+                tally.window_ns += window->second;
+                ++tally.windows;
+            }
+            const auto peak = span.metrics.find(SampledMetric::peak_rss_bytes);
+            if (peak != span.metrics.end())
+                tally.peak_rss_bytes = std::max(tally.peak_rss_bytes.value_or(0), static_cast<std::uint64_t>(peak->second));
+            summed += length;
+        }
+        for (std::size_t a = 0; a < keys.size(); ++a)
+            for (std::size_t b = 0; b < keys.size(); ++b) {
+                const StageSpan& one   = iteration.timeline[a];
+                const StageSpan& other = iteration.timeline[b];
+                if (keys[a] != keys[b] && one.started_at < other.done_at && other.started_at < one.done_at)
+                    tallies[keys[a]].shared = true;
+            }
+        for (const UnfinishedStage& stage : iteration.unfinished) {
+            Tally& tally      = tally_of(key_of(stage.stage, stage.scope));
+            tally.unfinished  = true;
+            tally.first_start = std::min(tally.first_start, stage.started_at - zero);
+        }
+        for (const StageNotRun& stage : iteration.not_run)
+            tally_of(key_of(stage.stage, stage.scope));
+        wall += iteration.wall;
+        uncovered += iteration.wall - covered(iteration.timeline);
+        cpu += iteration.cpu;
+        if (iteration.peak_rss_bytes)
+            summary.peak_rss_bytes = std::max(summary.peak_rss_bytes.value_or(0), *iteration.peak_rss_bytes);
+    }
+
+    summary.summed_work = Millis(summed) / double(count);
+    summary.wall        = Millis(wall) / double(count);
+    summary.unaccounted = Millis(uncovered) / double(count);
+    if (wall > Clock::duration::zero()) {
+        if (below_floor(header, count, nanoseconds(cpu)))
+            summary.cpu_below_floor = true;
+        else
+            summary.cpu = nanoseconds(cpu) / nanoseconds(wall);
+    }
+
+    for (const auto& [key, tally] : tallies) {
+        StageRow row;
+        row.stage       = key.first;
+        row.scope       = key.second;
+        row.first_start = tally.first_start;
+        if (!tally.ran) {
+            row.state = tally.unfinished ? StageState::Unfinished : StageState::NotRun;
+            summary.rows.push_back(std::move(row));
+            continue;
+        }
+        row.state = tally.instant ? StageState::Instant : StageState::Ran;
+        Clock::duration total {};
+        for (const Clock::duration length : tally.per_iteration)
+            total += length;
+        row.mean = Millis(total) / double(count);
+        row.min  = *std::min_element(tally.per_iteration.begin(), tally.per_iteration.end());
+        if (count > 1 && row.mean.count() > 0) {
+            double squares = 0.0;
+            for (const Clock::duration length : tally.per_iteration) {
+                const double deviation = (Millis(length) - row.mean).count();
+                squares += deviation * deviation;
+            }
+            row.cv = std::sqrt(squares / double(count - 1)) / row.mean.count();
+        }
+        if (summary.summed_work.count() > 0)
+            row.share = row.mean / summary.summed_work;
+        if (tally.windows > 0) {
+            if (below_floor(header, tally.windows, tally.cpu_ns))
+                row.cpu_below_floor = true;
+            else if (tally.window_ns > 0)
+                row.cpu = tally.cpu_ns / tally.window_ns;
+        }
+        row.peak_rss_bytes = tally.peak_rss_bytes;
+        row.shared         = tally.shared;
+        summary.rows.push_back(std::move(row));
+    }
+    return summary;
+}
+
+std::optional<OtherRow> collapse(std::vector<StageRow>& rows, double below)
+{
+    const auto folds = [below](const StageRow& row) {
+        return row.state != StageState::Unfinished && !row.significant && row.share < below;
+    };
+    OtherRow other;
+    for (const StageRow& row : rows) {
+        if (!folds(row))
+            continue;
+        ++other.stages;
+        if (row.state == StageState::NotRun)
+            ++other.not_run;
+        other.mean += row.mean;
+        other.share += row.share;
+    }
+    rows.erase(std::remove_if(rows.begin(), rows.end(), folds), rows.end());
+    if (other.stages == 0)
+        return std::nullopt;
+    return other;
+}
+
+}} // namespace Slic3r::Bench

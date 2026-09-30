@@ -8,6 +8,7 @@ add_library(orcabench_core STATIC
     core/Result.cpp
     core/Runner.cpp
     core/Sampler.cpp
+    core/Summary.cpp
     core/Workload.cpp
     )
 
