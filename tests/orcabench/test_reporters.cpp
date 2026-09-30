@@ -22,17 +22,6 @@ namespace {
 
 constexpr std::uint64_t mib = 1024 * 1024;
 
-StageSpan span_of(std::string stage, std::string scope, Clock::duration at, Clock::duration length, Metrics metrics = {})
-{
-    StageSpan span;
-    span.stage      = std::move(stage);
-    span.scope      = std::move(scope);
-    span.started_at = Clock::time_point {} + at;
-    span.done_at    = span.started_at + length;
-    span.metrics    = std::move(metrics);
-    return span;
-}
-
 Metrics sampled(double cpu_ms, double window_ms, std::uint64_t peak_mib)
 {
     return {{SampledMetric::cpu_ns, cpu_ms * 1e6},
@@ -166,10 +155,10 @@ TEST_CASE("rows sort by mean, or by first start for pipeline order", "[OrcaBench
     CHECK(at("psGCodeExport") < text.find("  other ("));
 }
 
-TEST_CASE("the console marks shared readings and CPU the Windows floor leaves out, with a legend for each", "[OrcaBench][Reporters]")
+TEST_CASE("the console marks shared readings and floored CPU, with a legend for each", "[OrcaBench][Reporters]")
 {
-    Result result     = canned();
-    result.machine.os = "Windows 10.0.26200";
+    Result result = canned();
+    result.machine.properties[MachineProperty::cpu_time_step_ns] = "15625000";
     for (IterationResult& iteration : result.workloads.front().iterations) {
         StageSpan& infill = iteration.timeline[1];
         infill.done_at -= 10ms;
@@ -180,7 +169,51 @@ TEST_CASE("the console marks shared readings and CPU the Windows floor leaves ou
     CHECK(text.find("  posSlice*                        12.5    12.0   5.7%~   1.4%       -         -\n") != std::string::npos);
     CHECK(text.find("  psGCodeExport                   805.0   800.0   0.9%   87.9%    5.0x       420\n") != std::string::npos);
     CHECK(text.find("\n* readings shared with stages that ran at the same time\n") != std::string::npos);
-    CHECK(text.find("\nCPU left out where Windows' 15.6 ms steps could skew it past 10%\n") != std::string::npos);
+    CHECK(text.find("\nCPU left out where 15.6 ms steps in CPU time could skew it past 10%\n") != std::string::npos);
+}
+
+TEST_CASE("the console marks a stage that ran but also never finished, with a legend", "[OrcaBench][Reporters]")
+{
+    Result result = canned();
+    result.workloads.front().iterations.front().unfinished.push_back({"posInfill", "object:1", Clock::time_point {} + 20ms});
+    const std::string text = render("console", result);
+    CHECK(text.find("  posInfill!                       93.0    90.0   4.6%~  10.2%    9.0x       410\n") != std::string::npos);
+    CHECK(text.find("  posEstimateCurledExtrusions  never finished\n") != std::string::npos);
+    CHECK(text.find("\n! started at least once without finishing, so some of its time is in unaccounted\n") != std::string::npos);
+}
+
+TEST_CASE("a console reused for another run explains only that run's marks", "[OrcaBench][Reporters]")
+{
+    std::ostringstream              out;
+    const std::unique_ptr<Reporter> console = make_reporter("console", out, {});
+    report(*console, canned());
+    Result quiet    = canned();
+    quiet.workloads = {quiet.workloads[1]};
+    out.str("");
+    report(*console, quiet);
+    CHECK(out.str() == render("console", quiet));
+}
+
+TEST_CASE("a time too short to print as 0.1 prints as <0.1", "[OrcaBench][Reporters]")
+{
+    IterationResult iteration;
+    iteration.wall     = 200ms;
+    iteration.timeline = {span_of("posSlice", "object:0", 0ms, 30us), span_of("psGCodeExport", "print", 1ms, 100ms)};
+    Result result      = canned();
+    result.workloads   = {WorkloadResult::ran("slice/idler", std::nullopt, std::nullopt, {iteration})};
+    ReportOptions options;
+    options.verbose = true;
+    CHECK(render("console", result, options).find("  posSlice object:0                <0.1    <0.1      -    0.0%       -         -\n") !=
+          std::string::npos);
+}
+
+TEST_CASE("a pass count too wide for the console follows the workload's name after two spaces", "[OrcaBench][Reporters]")
+{
+    Result            result = canned();
+    const std::string warmup(80, '9');
+    result.measurement[MeasurementKey::warmup] = warmup;
+    CHECK(render("console", result).find("\nslice/extruder-idler/standard-0.20  " + warmup + " warmup + 2 iterations\n") !=
+          std::string::npos);
 }
 
 TEST_CASE("the header marks a build whose flags turn optimization off", "[OrcaBench][Reporters]")
@@ -190,6 +223,9 @@ TEST_CASE("the header marks a build whose flags turn optimization off", "[OrcaBe
         {"-g -O0", true},
         {"/O2 /Ob2 /DNDEBUG", false},
         {"-O3 -march=native", false},
+        {"/Od /O2", false},
+        {"-O2 -O0", true},
+        {"", false},
     }));
     CAPTURE(flags);
     Result result = canned();
@@ -312,6 +348,7 @@ TEST_CASE("without a progress line only the reporter hears the run", "[OrcaBench
     const RunEvents                 events  = report_events(*console, nullptr);
     CHECK(static_cast<bool>(events.started));
     CHECK(static_cast<bool>(events.workload_done));
+    CHECK(static_cast<bool>(events.finished));
     CHECK_FALSE(static_cast<bool>(events.workload_started));
     CHECK_FALSE(static_cast<bool>(events.pass_done));
 }
@@ -337,6 +374,5 @@ TEST_CASE("a run reported as it goes prints what its finished result prints", "[
     const std::unique_ptr<Reporter> console = make_reporter("console", live, {});
     const RunEvents                 events  = report_events(*console, nullptr);
     const Result                    result  = run_suite(entries, Policy::resolve("quick", {}, 1), kinds, environment, host_reading, events);
-    console->finished(result);
     CHECK(live.str() == render("console", result));
 }

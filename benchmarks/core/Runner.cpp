@@ -234,6 +234,7 @@ Result run_suite(const std::vector<CatalogEntry>& entries, const Policy& policy,
         }
     }
     result.suite.duration = Clock::now() - started_at;
+    notify(events.finished, result);
     return result;
 }
 
