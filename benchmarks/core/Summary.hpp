@@ -17,10 +17,6 @@ inline constexpr double collapse_share = 0.01;
 // The change compare calls significant, which a stage whose CV exceeds it cannot resolve.
 inline constexpr double significance_bar = 0.03;
 
-// The step in which Windows advances a thread's CPU time, so each reading there can be off by one per
-// thread.
-inline constexpr std::chrono::microseconds windows_cpu_tick {15625};
-
 // The most a CPU figure's worst-case rounding may be of the CPU time it shows.
 inline constexpr double cpu_error_limit = 0.1;
 
@@ -36,6 +32,8 @@ struct StageRow
     // Empty when the row adds up every scope.
     std::string scope;
     StageState  state = StageState::Ran;
+    // The stage started without finishing at least once, which puts that time in unaccounted.
+    bool unfinished = false;
     // Over the iterations, of the row's span time summed within each one.
     Millis      mean {};
     Millis      min {};
@@ -69,6 +67,10 @@ struct WorkloadSummary
     bool                         cpu_below_floor = false;
 };
 
+// The CPU time step the machine recorded, and zero where it recorded none or one that is not a count
+// of nanoseconds.
+std::chrono::nanoseconds recorded_cpu_time_step(const MachineIdentity& machine);
+
 // The rows and totals of a workload's iterations, where the header's machine decides whether CPU is
 // floored and its measurement gives the thread count the floor assumes.
 WorkloadSummary summarize(const WorkloadResult& workload, const Result& header, bool verbose);
@@ -82,8 +84,8 @@ struct OtherRow
     double      share = 0.0;
 };
 
-// Moves each row under the threshold into the returned other row, except a stage that never finished
-// and a significant one, and returns nothing when none folds.
+// Moves each row under the threshold into the returned other row, except one marked unfinished or
+// significant, and returns nothing when none folds.
 std::optional<OtherRow> collapse(std::vector<StageRow>& rows, double below);
 
 }} // namespace Slic3r::Bench

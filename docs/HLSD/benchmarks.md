@@ -236,15 +236,16 @@ past the wall envelope but cannot make unaccounted negative. Each row carries it
 the four stay apart.
 
 `collapse()` folds the rows under 1% of summed work into one other row, which counts the stages that
-never ran. A stage that never finished never folds, since the time it hides lands in unaccounted,
-and neither does a row marked significant, so a change that matters stays visible however small the
-stage. A row whose CV exceeds the 3% significance bar is noisy, since a change that size there
-cannot be told from noise.
+never ran. A row whose stage started without finishing at least once never folds, even when it also
+ran, since the time it hides lands in unaccounted, and neither does a row marked significant, so a
+change that matters stays visible however small the stage. A row whose CV exceeds the 3%
+significance bar is noisy, since a change that size there cannot be told from noise.
 
 Each row also carries its sampled CPU and peak memory, and is marked shared when its spans
-overlapped another row's, since its readings then include that work. On a result recorded on
-Windows, a CPU figure is left out when the worst-case rounding of its readings, the recorded thread
-count times the 15.6 ms tick per pair, exceeds a tenth of the CPU time it shows.
+overlapped another row's, since its readings then include that work. A CPU figure is left out when
+the worst-case rounding of its readings exceeds a tenth of the CPU time it shows. That rounding is
+the CPU time step the result's machine recorded, once per pair of readings for each of the run's
+threads and for the sampler's, so CPU from a machine that recorded no step is never left out.
 
 ## The reporters
 
