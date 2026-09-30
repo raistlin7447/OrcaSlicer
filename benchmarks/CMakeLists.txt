@@ -1,5 +1,6 @@
 add_library(orcabench_core STATIC
     core/BuildId.cpp
+    core/Compare.cpp
     core/Document.cpp
     core/Host.cpp
     core/Measurement.cpp

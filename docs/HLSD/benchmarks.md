@@ -267,6 +267,33 @@ In a log it prints a line as each workload starts. In a terminal it redraws one 
 pass, with the time the pass took and the time the workload has left at its pace so far, and erases
 it before the workload's table prints.
 
+## Comparing results
+
+`Compare.cpp` compares two results, `a` from before a change and `b` from after it, pairing their
+workloads by name and their stages by stage, or by stage and scope in verbose mode. Runs compare
+only when their measurement identities are equal, since a different thread count or policy changes
+the times with no change to the code, and an option compares them anyway, keeping each difference.
+Builds and machines may differ, since telling them apart is what a comparison is for.
+
+Every figure is the minimum over the iterations: each stage, summed work, unaccounted time, the wall
+and peak memory. Interference only ever adds time, so the minimum is the steadiest estimate of what
+the code costs, and the change of the mean prints beside it to show a spread that moved. A change
+counts when it reaches the 3% significance bar and exceeds both runs' CV. One that reaches the bar
+inside a CV is marked `~` as possible noise, and a run with one iteration or a mean of zero has no
+CV, so a change there is not judged.
+
+A workload whose output hash or work stats differ measures different work, so the comparison keeps
+every hash and stat that changed. Wherever both runs recorded work stats it also compares the wall
+per million moves, per layer and per cm3, the figures that still mean something when the output
+changed. The geometric mean of the wall covers only the workloads whose output did not change. A
+stage whose state changed, or that only one run has, is significant, and pairs fold into the other
+row only when small in both runs and unchanged, so a stage that grew surfaces however small it was
+before.
+
+The two runs are timed apart, one after the other, so anything that changes on the machine between
+them, such as its temperature or a background job, moves the figures as a code change would, and the
+comparison cannot tell the two apart. Runs made back to back on an idle machine keep that small.
+
 ## Tests
 
 `tests/data/orcabench/result_v1.json` is written by hand from the schema and is never regenerated

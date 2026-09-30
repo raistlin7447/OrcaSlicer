@@ -22,6 +22,20 @@ inline constexpr double cpu_error_limit = 0.1;
 
 using Millis = std::chrono::duration<double, std::milli>;
 
+// A figure over a run's iterations: its minimum, its mean, and the sample standard deviation over
+// the mean, absent with fewer than two values or a zero mean.
+struct Spread
+{
+    double                min  = 0.0;
+    double                mean = 0.0;
+    std::optional<double> cv;
+};
+
+Spread spread_of(const std::vector<double>& values);
+
+// The time any span of the timeline covers, counting time that spans share once.
+Clock::duration covered(const Timeline& timeline);
+
 // Ran, ran below the clock's resolution, never ran, and started but never finished.
 enum class StageState { Ran, Instant, NotRun, Unfinished };
 
@@ -82,8 +96,10 @@ struct OtherRow
     double      share = 0.0;
 };
 
-// Moves each row under the threshold into the returned other row, except one marked unfinished, and
-// returns nothing when none folds.
+// Whether a row under the threshold folds into the other row, which one marked unfinished never does.
+bool folds(const StageRow& row, double below);
+
+// Moves each row that folds into the returned other row, and returns nothing when none does.
 std::optional<OtherRow> collapse(std::vector<StageRow>& rows, double below);
 
 }} // namespace Slic3r::Bench

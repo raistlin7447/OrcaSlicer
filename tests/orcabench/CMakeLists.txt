@@ -2,6 +2,7 @@ get_filename_component(_TEST_NAME ${CMAKE_CURRENT_LIST_DIR} NAME)
 
 add_executable(${_TEST_NAME}_tests
     test_buildid.cpp
+    test_compare.cpp
     test_document.cpp
     test_host.cpp
     test_measurement.cpp
