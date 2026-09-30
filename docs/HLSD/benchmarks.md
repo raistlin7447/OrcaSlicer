@@ -258,9 +258,17 @@ document at the end. A new reporter is a class and one entry in the table in `Re
 `make_reporter()` reads.
 
 The console marks a noisy or shared row, and one whose stage also started without finishing, with a
-symbol that a legend explains, never with color. Its header names the configuration and the machine,
-and says `unoptimized` for flags that turn optimization off, as OrcaSlicer's RelWithDebInfo does.
-`json` writes the result itself, so nothing folds in it.
+symbol that a legend explains. Its header names the configuration and the machine, and says
+`unoptimized` for flags that turn optimization off, as OrcaSlicer's RelWithDebInfo does. `json`
+writes the result itself, so nothing folds in it.
+
+Both console views can color their text, as a second channel that never carries meaning the words
+lack, so a pasted log, a monochrome screenshot or a colorblind reader loses nothing. Bold vermillion
+marks worse and bold blue better, never red against green, inverse marks an alarm and dim what did
+not clear the bar. Color is on when standard output is a terminal, `TERM` is not `dumb` and
+`NO_COLOR` is unset or empty, and `--color` overrides all three. `Host` turns on escape sequences in
+a Windows console, and a terminal that hands programs a pipe, as mintty does, gets color only from
+`--color always`.
 
 `Progress` shows where a run is on stderr, apart from the report, so piping `json` never carries it.
 In a log it prints a line as each workload starts. In a terminal it redraws one line after each
@@ -307,4 +315,5 @@ comparison cannot tell the two apart. Runs made back to back on an idle machine 
 from the writer, which would make the golden test agree with whatever the writer does, and the
 expected text of both console views is laid out apart from the code that prints it for the same
 reason. The document tests compare text with the whitespace between tokens removed, so a change in
-indentation alone does not fail them. Every refusal above has a test that fails without it.
+indentation alone does not fail them. Stripping the escape sequences from colored output must give
+the plain text exactly. Every refusal above has a test that fails without it.

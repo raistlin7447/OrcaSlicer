@@ -15,6 +15,9 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+// When the console views color their output.
+enum class ColorChoice { Auto, Always, Never };
+
 // The result documents --compare names, the one from before a change first.
 struct CompareFiles
 {
@@ -29,6 +32,7 @@ struct Options
     bool                        list = false;
     std::optional<CompareFiles> compare;
     bool                        allow_mismatch = false;
+    ColorChoice                 color          = ColorChoice::Auto;
 };
 
 // The arguments after the program name, and none when argc is 0, which an exec with an empty argv
@@ -40,5 +44,9 @@ Options parse_options(const std::vector<std::string_view>& arguments);
 
 // What --help prints, one line per option, then the exit statuses.
 std::string usage();
+
+// Whether the console views color their output, where auto colors a terminal unless NO_COLOR holds
+// anything, as no-color.org asks, or TERM is dumb.
+bool use_color(ColorChoice choice, bool terminal, const char* no_color, const char* term);
 
 }} // namespace Slic3r::Bench

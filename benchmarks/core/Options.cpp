@@ -7,6 +7,17 @@ namespace Slic3r { namespace Bench {
 
 namespace {
 
+ColorChoice color_choice(std::string_view value)
+{
+    if (value == "auto")
+        return ColorChoice::Auto;
+    if (value == "always")
+        return ColorChoice::Always;
+    if (value == "never")
+        return ColorChoice::Never;
+    throw OptionsError("--color needs auto|always|never, not '" + std::string(value) + "'");
+}
+
 struct Flag
 {
     const char* name;
@@ -26,6 +37,8 @@ constexpr Flag flags[] = {
      "compare result a, from before a change, with result b, from after it"},
     {"--allow-mismatch", "", [](Options& options, const std::string_view*) { options.allow_mismatch = true; },
      "compare results that measured differently"},
+    {"--color", "auto|always|never", [](Options& options, const std::string_view* values) { options.color = color_choice(values[0]); },
+     "color the output, auto for a terminal unless TERM=dumb or NO_COLOR is non-empty"},
     {"--help", "", [](Options& options, const std::string_view*) { options.help = true; }, "print this text"},
 };
 
@@ -77,6 +90,13 @@ std::string usage()
     for (const Flag& flag : flags)
         text += "  " + synopsis(flag) + std::string(widest + 2 - synopsis(flag).size(), ' ') + flag.help + "\n";
     return text + "exit status: 0 done, 1 error, 2 bad command line, 3 --compare found changed output\n";
+}
+
+bool use_color(ColorChoice choice, bool terminal, const char* no_color, const char* term)
+{
+    if (choice == ColorChoice::Auto)
+        return terminal && (no_color == nullptr || *no_color == '\0') && (term == nullptr || std::string_view(term) != "dumb");
+    return choice == ColorChoice::Always;
 }
 
 }} // namespace Slic3r::Bench

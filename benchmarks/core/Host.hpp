@@ -36,4 +36,8 @@ unsigned logical_cores();
 // enough not to matter.
 std::chrono::nanoseconds cpu_time_step();
 
+// Turns on escape sequences in the terminal standard output writes to, which a Windows console starts
+// without, and says whether standard output is a terminal that shows them.
+bool enable_terminal_escapes();
+
 }} // namespace Slic3r::Bench

@@ -24,6 +24,8 @@
 using namespace Slic3r::Bench;
 using namespace Slic3r::Bench::Test;
 using namespace std::chrono_literals;
+using Catch::Matchers::ContainsSubstring;
+using Catch::Matchers::StartsWith;
 
 namespace {
 
@@ -520,6 +522,41 @@ Result after()
                       WorkloadResult::skipped("slice/benchy/standard-0.20", "fixture not available: corpus 'external' not fetched")});
 }
 
+// The runs with coarse CPU time steps, where posPrepareInfill overlaps posInfill in b and posPerimeters
+// also started without finishing in a.
+std::pair<Result, Result> marked_runs()
+{
+    Result a = before();
+    Result b = after();
+    for (Result* run : {&a, &b})
+        run->machine.properties[MachineProperty::cpu_time_step_ns] = "15625000";
+    for (IterationResult& iteration : b.workloads[0].iterations)
+        for (StageSpan& span : iteration.timeline)
+            if (span.stage == "posPrepareInfill") {
+                span.started_at += 10ms;
+                span.done_at += 10ms;
+            }
+    a.workloads[0].iterations[0].unfinished.push_back({"posPerimeters", "object:1", Clock::time_point {} + 20ms});
+    return {a, b};
+}
+
+// The run after, where posSimplifyInfill no longer runs, posContouring takes no time and posIroning
+// is new.
+Result restaged_after()
+{
+    Result b = after();
+    for (IterationResult& iteration : b.workloads[0].iterations) {
+        Timeline&  timeline = iteration.timeline;
+        const auto simplify = [](const StageSpan& span) { return span.stage == "posSimplifyInfill"; };
+        timeline.erase(std::remove_if(timeline.begin(), timeline.end(), simplify), timeline.end());
+        for (StageSpan& span : timeline)
+            if (span.stage == "posContouring")
+                span.done_at = span.started_at;
+        timeline.push_back(span_of("posIroning", "object:0", 1100ms, 20ms));
+    }
+    return b;
+}
+
 // The run as if it had timed only its first iteration.
 Result first_iteration_of(Result run)
 {
@@ -548,6 +585,15 @@ std::string compare_text(const Result& a, const Result& b, const CompareView& vi
 }
 
 bool has_line(const std::string& text, const std::string& line) { return text.find("\n" + line + "\n") != std::string::npos; }
+
+const std::string worse   = "\x1b[1;38;5;166m";
+const std::string better  = "\x1b[1;38;5;32m";
+const std::string inverse = "\x1b[7m";
+const std::string strong  = "\x1b[1m";
+const std::string faint   = "\x1b[2m";
+const std::string reset   = "\x1b[0m";
+
+std::string without_color(const std::string& text) { return std::regex_replace(text, std::regex("\x1b\\[[0-9;]*m"), ""); }
 
 } // namespace
 
@@ -753,18 +799,8 @@ TEST_CASE("a change over one iteration is shown but not judged", "[OrcaBench][Re
 TEST_CASE("a comparison marks shared readings, stages that also never finished and floored CPU, with a legend for each",
           "[OrcaBench][Reporters]")
 {
-    Result a = before();
-    Result b = after();
-    for (Result* run : {&a, &b})
-        run->machine.properties[MachineProperty::cpu_time_step_ns] = "15625000";
-    for (IterationResult& iteration : b.workloads[0].iterations)
-        for (StageSpan& span : iteration.timeline)
-            if (span.stage == "posPrepareInfill") {
-                span.started_at += 10ms;
-                span.done_at += 10ms;
-            }
-    a.workloads[0].iterations[0].unfinished.push_back({"posPerimeters", "object:1", Clock::time_point {} + 20ms});
-    const std::string text = compare_text(a, b);
+    const auto [a, b]        = marked_runs();
+    const std::string text   = compare_text(a, b);
     const std::string infill =
         "  posInfill*                       90.0    83.1   -7.7%  faster     -6.9   -6.8%  1.4%  2.1%     -     -   398.0   391.0";
     const std::string prepare =
@@ -781,17 +817,7 @@ TEST_CASE("a comparison marks shared readings, stages that also never finished a
 
 TEST_CASE("a stage only one run has, or whose state changed, shows what each run did", "[OrcaBench][Reporters]")
 {
-    Result b = after();
-    for (IterationResult& iteration : b.workloads[0].iterations) {
-        Timeline& timeline = iteration.timeline;
-        const auto simplify = [](const StageSpan& span) { return span.stage == "posSimplifyInfill"; };
-        timeline.erase(std::remove_if(timeline.begin(), timeline.end(), simplify), timeline.end());
-        for (StageSpan& span : timeline)
-            if (span.stage == "posContouring")
-                span.done_at = span.started_at;
-        timeline.push_back(span_of("posIroning", "object:0", 1100ms, 20ms));
-    }
-    const std::string text = compare_text(before(), b);
+    const std::string text = compare_text(before(), restaged_after());
     CHECK(has_line(text, "  posSimplifyInfill            only in a"));
     CHECK(has_line(text, "  posIroning                   only in b"));
     CHECK(has_line(text, "  posContouring                0.4 -> instant"));
@@ -874,4 +900,82 @@ TEST_CASE("a comparison prints each control character in a document's text as a 
     CHECK(has_line(text, "  skipped in b: fixture not available: ?[2J?K"));
     CHECK(text.find("Release  after?[31m.json\n") != std::string::npos);
     CHECK(text.find('\x1b') == std::string::npos);
+}
+
+TEST_CASE("color changes no character of either view", "[OrcaBench][Reporters]")
+{
+    SECTION("a run")
+    {
+        Result run      = canned();
+        run.build.flags = "/Od";
+        run.machine.properties[MachineProperty::cpu_time_step_ns] = "15625000";
+        for (IterationResult& iteration : run.workloads.front().iterations) {
+            iteration.timeline[1].started_at -= 10ms;
+            iteration.timeline[1].done_at -= 10ms;
+        }
+        run.workloads.front().iterations.front().unfinished.push_back({"posInfill", "object:1", Clock::time_point {} + 20ms});
+        ReportOptions options;
+        options.color          = true;
+        const std::string text = render("console", run, options);
+        CHECK(text != render("console", run));
+        CHECK(without_color(text) == render("console", run));
+    }
+    SECTION("a comparison")
+    {
+        const auto [a, b]      = marked_runs();
+        Result     mismatched  = restaged_after();
+        mismatched.build.flags = "/Od";
+        mismatched.measurement[MeasurementKey::threads] = "8";
+        const std::pair<Result, Result> runs[] = {
+            {before(), after()}, {a, b}, {before(), mismatched}, {first_iteration_of(before()), first_iteration_of(after())}};
+        for (const auto& [x, y] : runs)
+            for (const bool verbose : {false, true}) {
+                CompareView       view  = file_view();
+                const std::string plain = compare_text(x, y, view, true, verbose);
+                view.color              = true;
+                const std::string text  = compare_text(x, y, view, true, verbose);
+                CHECK(text != plain);
+                CHECK(without_color(text) == plain);
+            }
+    }
+}
+
+TEST_CASE("a colored comparison paints verdicts, alarms and what fell below the bar", "[OrcaBench][Reporters]")
+{
+    CompareView view = file_view();
+    view.color       = true;
+    const std::string text = compare_text(before(), after(), view);
+    CHECK_THAT(text, StartsWith(strong + "orca_bench compare" + reset + "  quick"));
+    CHECK_THAT(text, ContainsSubstring(inverse + "OUTPUT CHANGED" + reset + " in 1 workload"));
+    CHECK_THAT(text, ContainsSubstring(inverse + "output changed" + reset));
+    CHECK_THAT(text, ContainsSubstring(strong + "slice/voron-cube/standard-0.20" + reset + " "));
+    CHECK_THAT(text, ContainsSubstring(better + "-4.3%" + reset + "  " + better + "faster" + reset));
+    CHECK_THAT(text, ContainsSubstring(faint + "output unchanged" + reset));
+    CHECK_THAT(text, ContainsSubstring(faint + "   min a   min b  change"));
+    CHECK_THAT(text, ContainsSubstring(strong + "posPrepareInfill" + reset));
+    CHECK_THAT(text, ContainsSubstring(worse + "+8.0%" + reset + "  " + worse + "slower" + reset));
+    CHECK_THAT(text, ContainsSubstring(better + "-7.7%" + reset + "  " + better + "faster" + reset));
+    CHECK_THAT(text, ContainsSubstring(worse + "+5.5%" + reset + "  " + worse + "longer" + reset));
+    CHECK_THAT(text, ContainsSubstring(faint + "+4.0%" + reset + faint + "~" + reset));
+    CHECK_THAT(text, ContainsSubstring("68.9   " + faint + "+1.0%" + reset));
+    CHECK_THAT(text, ContainsSubstring(worse + "never finished in both" + reset));
+    CHECK_THAT(text, ContainsSubstring("  " + faint + std::string(118, '-') + reset));
+    CHECK_THAT(text, ContainsSubstring(worse + "slower" + reset + ", " + better + "faster" + reset + "    " + faint + "the minimum moved"));
+}
+
+TEST_CASE("a colored run paints outcomes, stages that never finished and its marks", "[OrcaBench][Reporters]")
+{
+    Result run      = canned();
+    run.build.flags = "/Od";
+    ReportOptions options;
+    options.color          = true;
+    const std::string text = render("console", run, options);
+    CHECK_THAT(text, StartsWith(strong + "orca_bench" + reset + "  quick"));
+    CHECK_THAT(text, ContainsSubstring("Release " + worse + "(unoptimized)" + reset));
+    CHECK_THAT(text, ContainsSubstring(strong + "slice/extruder-idler/standard-0.20" + reset));
+    CHECK_THAT(text, ContainsSubstring(worse + "never finished" + reset));
+    CHECK_THAT(text, ContainsSubstring("4.6%" + faint + "~" + reset));
+    CHECK_THAT(text, ContainsSubstring(strong + "SKIPPED" + reset));
+    CHECK_THAT(text, ContainsSubstring(inverse + "FAILED" + reset));
+    CHECK_THAT(text, ContainsSubstring(faint + "~ CV above the 3% significance bar"));
 }

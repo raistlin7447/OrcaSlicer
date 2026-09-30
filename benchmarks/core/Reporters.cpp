@@ -61,21 +61,56 @@ std::string short_hash(std::uint64_t hash)
     return text;
 }
 
+// How a console view marks text beyond its words, which carry the meaning without it.
+enum class Paint { Plain, Worse, Better, Alarm, Strong, Faint };
+
+// The text wrapped in the paint's escape sequence when coloring, where blank text stays as it is.
+std::string painted(const std::string& text, Paint paint, bool color)
+{
+    if (!color || text.find_first_not_of(' ') == std::string::npos)
+        return text;
+    switch (paint) {
+    case Paint::Plain: return text;
+    case Paint::Worse: return "\x1b[1;38;5;166m" + text + "\x1b[0m";
+    case Paint::Better: return "\x1b[1;38;5;32m" + text + "\x1b[0m";
+    case Paint::Alarm: return "\x1b[7m" + text + "\x1b[0m";
+    case Paint::Strong: return "\x1b[1m" + text + "\x1b[0m";
+    case Paint::Faint: return "\x1b[2m" + text + "\x1b[0m";
+    }
+    return text;
+}
+
+// The columns the text takes on screen, without its escape sequences.
+std::size_t shown_width(const std::string& text)
+{
+    std::size_t width = 0;
+    for (std::size_t at = 0; at < text.size(); ++at) {
+        if (text[at] == '\x1b')
+            at = std::min(text.find('m', at), text.size());
+        else
+            ++width;
+    }
+    return width;
+}
+
 std::string padded(const std::string& text, std::size_t width)
 {
-    return text.size() < width ? text + std::string(width - text.size(), ' ') : text;
+    const std::size_t shown = shown_width(text);
+    return shown < width ? text + std::string(width - shown, ' ') : text;
 }
 
 std::string right(const std::string& text, std::size_t width)
 {
-    return text.size() < width ? std::string(width - text.size(), ' ') + text : text;
+    const std::size_t shown = shown_width(text);
+    return shown < width ? std::string(width - shown, ' ') + text : text;
 }
 
 // A name with a text flush with the view's right edge, or two spaces after a name too long for that.
 std::string name_line(const std::string& name, const std::string& text, std::size_t width = line_width)
 {
-    const std::size_t room = text.size() < width ? width - text.size() : 0;
-    return padded(name, std::max(room, name.size() + 2)) + text + "\n";
+    const std::size_t shown = shown_width(text);
+    const std::size_t room  = shown < width ? width - shown : 0;
+    return padded(name, std::max(room, shown_width(name) + 2)) + text + "\n";
 }
 
 // The name of the row that folded stages add up to, such as "other (3 stages, 1 not run)".
@@ -90,7 +125,7 @@ std::string other_name(std::size_t stages, std::size_t not_run)
 // The column naming a row, with one space after a name too long for it.
 std::string name_cell(const std::string& name, std::size_t width = stage_width)
 {
-    return "  " + (name.size() < width ? padded(name, width) : name + " ");
+    return "  " + (shown_width(name) < width ? padded(name, width) : name + " ");
 }
 
 std::string label(const Properties& properties, const char* key)
@@ -123,10 +158,10 @@ public:
         m_marks                        = {};
         const BuildIdentity&   build   = header.build;
         const MachineIdentity& machine = header.machine;
-        m_out << "orca_bench  " << label(header.measurement, MeasurementKey::policy)
+        m_out << paint("orca_bench", Paint::Strong) << "  " << label(header.measurement, MeasurementKey::policy)
               << "  threads=" << label(header.measurement, MeasurementKey::threads)
               << "  " << build.compiler << " " << build.compiler_version
-              << "  " << build.config << (unoptimized(build.flags) ? " (unoptimized)" : "")
+              << "  " << build.config << (unoptimized(build.flags) ? " " + paint("(unoptimized)", Paint::Worse) : "")
               << "  " << build.revision << (build.dirty ? " dirty" : "") << "\n"
               << machine.host << "  " << machine.os << "  " << machine.cpu << "  " << std::to_string(machine.logical_cores) << " cores\n"
               << std::flush;
@@ -138,23 +173,28 @@ public:
         if (workload.outcome == Outcome::Ran)
             write_ran(workload);
         else
-            m_out << name_line(workload.name, workload.outcome == Outcome::Skipped ? "SKIPPED" : "FAILED") << "  " << workload.reason
-                  << "\n";
+            m_out << name_line(paint(workload.name, Paint::Strong),
+                               workload.outcome == Outcome::Skipped ? paint("SKIPPED", Paint::Strong) : paint("FAILED", Paint::Alarm))
+                  << "  " << workload.reason << "\n";
         m_out << std::flush;
     }
 
     void finished(const Result& result) override
     {
-        std::string legends;
+        const std::string bar = fixed(100 * significance_bar, 0) + "%";
+        std::string       legends;
         if (m_marks.noisy)
-            legends += "~ CV above the " + fixed(100 * significance_bar, 0) + "% significance bar, so a change that size there is noise\n";
+            legends += paint("~ CV above the " + bar + " significance bar, so a change that size there is noise", Paint::Faint) + "\n";
         if (m_marks.shared)
-            legends += "* readings shared with stages that ran at the same time\n";
+            legends += paint("* readings shared with stages that ran at the same time", Paint::Faint) + "\n";
         if (m_marks.unfinished)
-            legends += "! started at least once without finishing, so some of its time is in unaccounted\n";
+            legends += paint("!", Paint::Worse) +
+                       paint(" started at least once without finishing, so some of its time is in unaccounted", Paint::Faint) + "\n";
         if (m_marks.floored)
-            legends += "CPU left out where " + fixed(Millis(recorded_cpu_time_step(m_header.machine)).count(), 1) +
-                       " ms steps in CPU time could skew it past " + fixed(100 * cpu_error_limit, 0) + "%\n";
+            legends += paint("CPU left out where " + fixed(Millis(recorded_cpu_time_step(m_header.machine)).count(), 1) +
+                                 " ms steps in CPU time could skew it past " + fixed(100 * cpu_error_limit, 0) + "%",
+                             Paint::Faint) +
+                       "\n";
         if (!legends.empty())
             m_out << "\n" << legends;
         m_out << "\n"
@@ -164,18 +204,20 @@ public:
     }
 
 private:
+    std::string paint(const std::string& text, Paint as) const { return painted(text, as, m_options.color); }
+
     void write_ran(const WorkloadResult& workload)
     {
         std::vector<std::string> footer;
         if (workload.iterations.empty()) {
-            m_out << workload.name << "\n";
+            m_out << paint(workload.name, Paint::Strong) << "\n";
         } else {
             const std::size_t count   = workload.iterations.size();
             const std::string warmup  = label(m_header.measurement, MeasurementKey::warmup);
             std::string       passes  = std::to_string(count) + (count == 1 ? " iteration" : " iterations");
             if (warmup != "-" && warmup != "0")
                 passes = warmup + " warmup + " + passes;
-            m_out << name_line(workload.name, passes);
+            m_out << name_line(paint(workload.name, Paint::Strong), passes);
             WorkloadSummary summary = summarize(workload, m_header, m_options.verbose);
             write_table(summary);
             m_out << "\n";
@@ -213,15 +255,18 @@ private:
             });
         const std::optional<OtherRow> other = m_options.verbose ? std::nullopt : collapse(rows, m_options.collapse_below);
 
-        m_out << "  " << std::string(stage_width, ' ') << right("mean", time_width) << right("min", time_width) << right("CV", cv_width)
-              << " " << right("share", share_width) << right("CPU", cpu_width) << right("peak MiB", peak_width) << "\n";
+        m_out << "  " << std::string(stage_width, ' ')
+              << paint(right("mean", time_width) + right("min", time_width) + right("CV", cv_width) + " " + right("share", share_width) +
+                           right("CPU", cpu_width) + right("peak MiB", peak_width),
+                       Paint::Faint)
+              << "\n";
         for (const StageRow& row : rows)
             m_out << row_line(row);
         if (other) {
             m_out << name_cell(other_name(other->stages, other->not_run)) << right(milliseconds(other->mean), time_width)
                   << right("-", time_width) << right("-", cv_width) << " " << right(percent(other->share), share_width) << "\n";
         }
-        m_out << "  " << std::string(line_width - 2, '-') << "\n"
+        m_out << "  " << paint(std::string(line_width - 2, '-'), Paint::Faint) << "\n"
               << name_cell("summed work") << right(milliseconds(summary.summed_work), time_width) << "\n"
               << name_cell("wall envelope") << right(milliseconds(summary.wall), time_width) << "\n"
               << name_cell("unaccounted") << right(milliseconds(summary.unaccounted), time_width);
@@ -234,14 +279,14 @@ private:
     {
         std::string name = row.scope.empty() ? row.stage : row.stage + " " + row.scope;
         if (row.shared)
-            name += "*";
+            name += paint("*", Paint::Faint);
         const bool partly_unfinished = row.unfinished && row.state != StageState::Unfinished;
         if (partly_unfinished)
-            name += "!";
+            name += paint("!", Paint::Worse);
         m_marks.shared     = m_marks.shared || row.shared;
         m_marks.unfinished = m_marks.unfinished || partly_unfinished;
         switch (row.state) {
-        case StageState::Unfinished: return name_cell(name) + right("never finished", time_width) + "\n";
+        case StageState::Unfinished: return name_cell(name) + right(paint("never finished", Paint::Worse), time_width) + "\n";
         case StageState::NotRun: return name_cell(name) + right("not run", time_width) + "\n";
         case StageState::Instant: return name_cell(name) + right("instant", time_width) + "\n";
         case StageState::Ran: break;
@@ -250,8 +295,8 @@ private:
         m_marks.noisy    = m_marks.noisy || noisy;
         m_marks.floored  = m_marks.floored || row.cpu_below_floor;
         return name_cell(name) + right(milliseconds(row.mean), time_width) + right(milliseconds(row.min), time_width) +
-               right(row.cv ? percent(*row.cv) : "-", cv_width) + (noisy ? "~" : " ") + right(percent(row.share), share_width) +
-               right(row.cpu ? fixed(*row.cpu, 1) + "x" : "-", cpu_width) +
+               right(row.cv ? percent(*row.cv) : "-", cv_width) + (noisy ? paint("~", Paint::Faint) : " ") +
+               right(percent(row.share), share_width) + right(row.cpu ? fixed(*row.cpu, 1) + "x" : "-", cpu_width) +
                right(row.peak_rss_bytes ? mebibytes(*row.peak_rss_bytes) : "-", peak_width) + "\n";
     }
 
@@ -316,6 +361,7 @@ constexpr std::size_t verdict_width = 7;
 constexpr std::size_t small_width   = 6;
 constexpr std::size_t summary_width = 41;
 constexpr std::size_t note_width    = 14;
+constexpr std::size_t mark_width    = 18;
 
 // The words a judged change ends with, worse first.
 struct Words
@@ -340,9 +386,6 @@ std::string signed_figure(double value)
 std::string signed_percent(double ratio) { return signed_figure(100 * ratio) + "%"; }
 
 std::string mib(double bytes) { return fixed(bytes / (1024.0 * 1024.0), 1); }
-
-// Each run's cell, right-aligned in `width`.
-std::string both(const std::string& a, const std::string& b, std::size_t width) { return right(a, width) + right(b, width); }
 
 // Removes the spaces that blank trailing columns leave.
 std::string trimmed_end(std::string text)
@@ -531,7 +574,8 @@ public:
             if (workload.not_compared.empty())
                 continue;
             ++skipped;
-            m_out << "\n" << name_line(workload.name, "NOT COMPARED", compare_width) << "  " << workload.not_compared << "\n";
+            m_out << "\n" << name_line(paint(workload.name, Paint::Strong), paint("NOT COMPARED", Paint::Strong), compare_width) << "  "
+                  << workload.not_compared << "\n";
         }
         legend(tables);
         m_out << "\n"
@@ -549,16 +593,17 @@ private:
         std::string       passes     = iterations + (iterations == "1" ? " iteration" : " iterations");
         if (warmup != "-" && warmup != "0")
             passes = warmup + " warmup + " + passes;
-        m_out << "orca_bench compare  " << label(a.measurement, MeasurementKey::policy)
+        m_out << paint("orca_bench compare", Paint::Strong) << "  " << label(a.measurement, MeasurementKey::policy)
               << "  threads=" << label(a.measurement, MeasurementKey::threads) << "  " << passes
               << "  stages " << label(a.measurement, MeasurementKey::stages) << "\n";
 
         const auto revision  = [](const BuildIdentity& build) { return build.revision + (build.dirty ? " dirty" : ""); };
-        const auto toolchain = [](const BuildIdentity& build) {
-            return build.compiler + " " + build.compiler_version + "  " + build.config + (unoptimized(build.flags) ? " (unoptimized)" : "");
+        const auto toolchain = [this](const BuildIdentity& build) {
+            return build.compiler + " " + build.compiler_version + "  " + build.config +
+                   (unoptimized(build.flags) ? " " + paint("(unoptimized)", Paint::Worse) : "");
         };
         const std::size_t revisions  = std::max(revision(a.build).size(), revision(b.build).size());
-        const std::size_t toolchains = std::max(toolchain(a.build).size(), toolchain(b.build).size());
+        const std::size_t toolchains = std::max(shown_width(toolchain(a.build)), shown_width(toolchain(b.build)));
         // The file comes last, where a long path wraps without moving the columns before it.
         const auto run_line = [&](const char* side, const Result& run, const std::string& name) {
             m_out << side << "  " << utc_minute(run.suite.started_at) << "  " << padded(revision(run.build), revisions) << "  "
@@ -584,7 +629,8 @@ private:
     {
         if (m_comparison.measurement.empty())
             return;
-        m_out << "\nMEASURED DIFFERENTLY, compared because that was allowed\n" << difference_lines(m_comparison.measurement, "  ");
+        m_out << "\n" << paint("MEASURED DIFFERENTLY", Paint::Alarm) << ", compared because that was allowed\n"
+              << difference_lines(m_comparison.measurement, "  ");
     }
 
     void changed_output()
@@ -595,7 +641,7 @@ private:
                 changed.push_back(&workload);
         if (changed.empty())
             return;
-        m_out << "\nOUTPUT CHANGED in " << changed.size()
+        m_out << "\n" << paint("OUTPUT CHANGED", Paint::Alarm) << " in " << changed.size()
               << (changed.size() == 1 ? " workload, so its times below measure different work\n"
                                       : " workloads, so their times below measure different work\n");
         for (const WorkloadComparison* workload : changed) {
@@ -620,20 +666,24 @@ private:
                 rows.push_back(&workload);
         if (rows.empty())
             return false;
-        m_out << "\n"
-              << trimmed_end(name_cell("", summary_width) + both("wall a", "wall b", figure_width) + right("change", figure_width) +
-                             std::string(2 + note_width, ' ') + right("diff", figure_width) + both("CV a", "CV b", small_width) +
-                             both("MiB a", "MiB b", figure_width))
-              << "\n";
+        const std::string heading = both("wall a", "wall b", figure_width) + right("change", figure_width) +
+                                    std::string(2 + note_width, ' ') + right("diff", figure_width) + both("CV a", "CV b", small_width) +
+                                    both("MiB a", "MiB b", figure_width);
+        m_out << "\n" << trimmed_end(name_cell("", summary_width) + paint(heading, Paint::Faint)) << "\n";
         for (const WorkloadComparison* workload : rows) {
-            const Change&                wall = *workload->wall;
-            const std::optional<Change>& peak = workload->peak_rss_bytes;
-            const std::string            note = workload->output_changed ? "output changed" : verdict_word(wall, speed_words);
-            m_out << trimmed_end(name_cell(workload->name, summary_width) + both(figure(wall.a.min), figure(wall.b.min), figure_width) +
-                                 right(signed_percent(wall.change), figure_width) + noise_mark(wall) + " " + padded(note, note_width) +
-                                 right(signed_figure(wall.b.min - wall.a.min), figure_width) +
-                                 both(cv_text(wall.a.cv), cv_text(wall.b.cv), small_width) +
-                                 both(peak ? mib(peak->a.min) : "-", peak ? mib(peak->b.min) : "-", figure_width))
+            // A workload whose output changed carries that note in place of a verdict.
+            const Change&                wall    = *workload->wall;
+            const std::optional<Change>& peak    = workload->peak_rss_bytes;
+            const bool                   changed = workload->output_changed;
+            const Paint                  row     = changed ? Paint::Plain : row_paint(wall);
+            const Paint                  verdict = changed ? Paint::Plain : verdict_paint(wall);
+            const std::string note = changed ? paint("output changed", Paint::Alarm) : paint(verdict_word(wall, speed_words), verdict);
+            m_out << trimmed_end(name_cell(paint(workload->name, row), summary_width) +
+                                 both(figure(wall.a.min), figure(wall.b.min), figure_width, row) +
+                                 right(paint(signed_percent(wall.change), verdict), figure_width) + paint(noise_mark(wall), Paint::Faint) +
+                                 " " + padded(note, note_width) + right(paint(signed_figure(wall.b.min - wall.a.min), row), figure_width) +
+                                 both(cv_text(wall.a.cv), cv_text(wall.b.cv), small_width, row) +
+                                 both(peak ? mib(peak->a.min) : "-", peak ? mib(peak->b.min) : "-", figure_width, row))
                   << "\n";
         }
         if (m_comparison.wall_geometric_mean) {
@@ -649,7 +699,9 @@ private:
     // The workload's table, and whether it had one.
     bool write_workload(const WorkloadComparison& workload)
     {
-        m_out << "\n" << name_line(workload.name, workload.output_changed ? "OUTPUT CHANGED" : "output unchanged", compare_width);
+        const std::string output =
+            workload.output_changed ? paint("OUTPUT CHANGED", Paint::Alarm) : paint("output unchanged", Paint::Faint);
+        m_out << "\n" << name_line(paint(workload.name, Paint::Strong), output, compare_width);
         if (!workload.wall && workload.stages.empty()) {
             m_out << "  no timed passes\n";
             return false;
@@ -665,10 +717,11 @@ private:
             });
         const std::optional<OtherPair> other = m_comparison.verbose ? std::nullopt : collapse(pairs, m_view.collapse_below);
 
-        m_out << trimmed_end(name_cell("") + both("min a", "min b", figure_width) + right("change", figure_width) +
-                             std::string(2 + verdict_width, ' ') + right("diff", figure_width) + right("by mean", figure_width) +
-                             both("CV a", "CV b", small_width) + both("CPU a", "CPU b", small_width) + both("MiB a", "MiB b", figure_width))
-              << "\n";
+        const std::string heading = both("min a", "min b", figure_width) + right("change", figure_width) +
+                                    std::string(2 + verdict_width, ' ') + right("diff", figure_width) + right("by mean", figure_width) +
+                                    both("CV a", "CV b", small_width) + both("CPU a", "CPU b", small_width) +
+                                    both("MiB a", "MiB b", figure_width);
+        m_out << trimmed_end(name_cell("") + paint(heading, Paint::Faint)) << "\n";
         const Words& time_words = workload.output_changed ? length_words : speed_words;
         for (const StagePair& pair : pairs)
             m_out << pair_row(pair, time_words);
@@ -680,12 +733,12 @@ private:
                        right(signed_figure((other->b - other->a).count()), figure_width);
             m_out << trimmed_end(row) << "\n";
         }
-        m_out << "  " << std::string(compare_width - 2, '-') << "\n";
+        m_out << "  " << paint(std::string(compare_width - 2, '-'), Paint::Faint) << "\n";
         figure_row("summed work", workload.summed_work, time_words);
         figure_row("unaccounted", workload.unaccounted, time_words);
         if (workload.wall)
             m_used.floored = m_used.floored || workload.cpu_below_floor_a || workload.cpu_below_floor_b;
-        figure_row("wall", workload.wall, time_words, 1.0, both(cpu_text(workload.cpu_a), cpu_text(workload.cpu_b), small_width));
+        figure_row("wall", workload.wall, time_words, 1.0, cpu_text(workload.cpu_a), cpu_text(workload.cpu_b));
         if (workload.output_changed) {
             figure_row("per 1M moves", workload.per_million_moves, speed_words);
             figure_row("per layer", workload.per_layer, speed_words);
@@ -697,41 +750,77 @@ private:
 
     std::string pair_row(const StagePair& pair, const Words& words)
     {
-        std::string name = pair.scope.empty() ? pair.stage : pair.stage + " " + pair.scope;
-        if (!pair.a || !pair.b || pair.a->state != StageState::Ran || pair.b->state != StageState::Ran)
-            return name_cell(name) + state_text(pair) + "\n";
-        const bool shared = pair.a->shared || pair.b->shared;
-        const bool partly = pair.a->unfinished || pair.b->unfinished;
-        if (shared)
-            name += "*";
-        if (partly)
-            name += "!";
-        m_used.shared     = m_used.shared || shared;
-        m_used.unfinished = m_used.unfinished || partly;
+        const std::string name = pair.scope.empty() ? pair.stage : pair.stage + " " + pair.scope;
+        if (!pair.a || !pair.b || pair.a->state != StageState::Ran || pair.b->state != StageState::Ran) {
+            const auto  unfinished = [](const std::optional<StageRow>& row) { return row && row->state == StageState::Unfinished; };
+            const Paint named      = pair.significant ? Paint::Strong : Paint::Plain;
+            const Paint state      = unfinished(pair.a) || unfinished(pair.b) ? Paint::Worse : named;
+            return name_cell(paint(name, named)) + paint(state_text(pair), state) + "\n";
+        }
+        const Paint row    = pair.time ? row_paint(*pair.time) : Paint::Plain;
+        const bool  shared = pair.a->shared || pair.b->shared;
+        const bool  partly = pair.a->unfinished || pair.b->unfinished;
+        m_used.shared      = m_used.shared || shared;
+        m_used.unfinished  = m_used.unfinished || partly;
+        const std::string marked = paint(name, row) + (shared ? paint("*", Paint::Faint) : "") + (partly ? paint("!", Paint::Worse) : "");
         // A minimum of zero in a gives no change, so the row shows only the minimums.
         if (!pair.time)
-            return trimmed_end(name_cell(name) + both(milliseconds(pair.a->min), milliseconds(pair.b->min), figure_width)) + "\n";
-        const std::string cells = change_cells(*pair.time, words, 1.0) + both(stage_cpu(*pair.a), stage_cpu(*pair.b), small_width) +
-                                  both(stage_peak(*pair.a), stage_peak(*pair.b), figure_width);
-        return trimmed_end(name_cell(name) + cells) + "\n";
+            return trimmed_end(name_cell(marked) + both(milliseconds(pair.a->min), milliseconds(pair.b->min), figure_width)) + "\n";
+        const std::string cells = change_cells(*pair.time, words, 1.0) + both(stage_cpu(*pair.a), stage_cpu(*pair.b), small_width, row) +
+                                  both(stage_peak(*pair.a), stage_peak(*pair.b), figure_width, row);
+        return trimmed_end(name_cell(marked) + cells) + "\n";
     }
 
     void figure_row(const std::string& name, const std::optional<Change>& change, const Words& words, double scale = 1.0,
-                    const std::string& cpu = "")
+                    const std::string& cpu_a = "", const std::string& cpu_b = "")
     {
-        if (change)
-            m_out << trimmed_end(name_cell(name) + change_cells(*change, words, scale) + cpu) << "\n";
+        if (!change)
+            return;
+        const Paint row = row_paint(*change);
+        m_out << trimmed_end(name_cell(paint(name, row)) + change_cells(*change, words, scale) + both(cpu_a, cpu_b, small_width, row))
+              << "\n";
     }
 
     // Both runs' figures, the change with its verdict, the difference and the mean's change, and each
     // run's CV.
     std::string change_cells(const Change& change, const Words& words, double scale)
     {
-        const std::string verdict    = noise_mark(change) + " " + padded(verdict_word(change, words), verdict_width);
+        const Paint       row        = row_paint(change);
+        const Paint       verdict    = verdict_paint(change);
+        const std::string word       = paint(verdict_word(change, words), verdict);
         const double      difference = (change.b.min - change.a.min) * scale;
-        return both(figure(change.a.min * scale), figure(change.b.min * scale), figure_width) +
-               right(signed_percent(change.change), figure_width) + verdict + right(signed_figure(difference), figure_width) +
-               right(signed_percent(change.mean_change), figure_width) + both(cv_text(change.a.cv), cv_text(change.b.cv), small_width);
+        return both(figure(change.a.min * scale), figure(change.b.min * scale), figure_width, row) +
+               right(paint(signed_percent(change.change), verdict), figure_width) + paint(noise_mark(change), Paint::Faint) + " " +
+               padded(word, verdict_width) + right(paint(signed_figure(difference), row), figure_width) +
+               right(paint(signed_percent(change.mean_change), row), figure_width) +
+               both(cv_text(change.a.cv), cv_text(change.b.cv), small_width, row);
+    }
+
+    std::string paint(const std::string& text, Paint as) const { return painted(text, as, m_view.color); }
+
+    // Each run's cell in the paint, right-aligned in `width`.
+    std::string both(const std::string& a, const std::string& b, std::size_t width, Paint as = Paint::Plain) const
+    {
+        return right(paint(a, as), width) + right(paint(b, as), width);
+    }
+
+    // A judged change's color, and faint for a change below the bar or inside a run's CV.
+    static Paint verdict_paint(const Change& change)
+    {
+        switch (change.verdict) {
+        case Verdict::Worse: return Paint::Worse;
+        case Verdict::Better: return Paint::Better;
+        case Verdict::Unchanged:
+        case Verdict::Noise: return Paint::Faint;
+        case Verdict::Unjudged: return Paint::Plain;
+        }
+        return Paint::Plain;
+    }
+
+    // Bold for the rest of a row whose change was judged.
+    static Paint row_paint(const Change& change)
+    {
+        return change.verdict == Verdict::Worse || change.verdict == Verdict::Better ? Paint::Strong : Paint::Plain;
     }
 
     std::string verdict_word(const Change& change, const Words& words)
@@ -766,26 +855,34 @@ private:
 
     void legend(bool tables)
     {
-        const std::string bar = fixed(100 * significance_bar, 0) + "%";
-        std::string       lines;
+        const std::string bar   = fixed(100 * significance_bar, 0) + "%";
+        const auto        entry = [this](const std::string& marks, const std::string& meaning) {
+            return padded(marks, mark_width) + paint(meaning, Paint::Faint) + "\n";
+        };
+        const auto words = [this](const Words& pair) { return paint(pair.worse, Paint::Worse) + ", " + paint(pair.better, Paint::Better); };
+        std::string lines;
         if (tables)
-            lines += "min a, min b, wall a and wall b are minimums over the iterations, in ms unless the row says otherwise\n";
+            lines += paint("min a, min b, wall a and wall b are minimums over the iterations, in ms unless the row says otherwise",
+                           Paint::Faint) +
+                     "\n";
         if (m_used.speed)
-            lines += "slower, faster    the minimum moved at least " + bar + " and more than either run's CV\n";
+            lines += entry(words(speed_words), "the minimum moved at least " + bar + " and more than either run's CV");
         if (m_used.length)
-            lines += "longer, shorter   the same, where the output changed, so the work differs too\n";
+            lines += entry(words(length_words), "the same, where the output changed, so the work differs too");
         if (m_used.memory)
-            lines += "more, less        the same test, for peak memory\n";
+            lines += entry(words(memory_words), "the same test, for peak memory");
         if (m_used.noise)
-            lines += "~                 at least " + bar + " but within a run's CV, so it may be noise\n";
+            lines += entry(paint("~", Paint::Faint), "at least " + bar + " but within a run's CV, so it may be noise");
         if (m_used.shared)
-            lines += "*                 readings shared with stages that ran at the same time\n";
+            lines += entry(paint("*", Paint::Faint), "readings shared with stages that ran at the same time");
         if (m_used.unfinished)
-            lines += "!                 started at least once without finishing, so some of its time is in unaccounted\n";
+            lines += entry(paint("!", Paint::Worse), "started at least once without finishing, so some of its time is in unaccounted");
         if (m_used.floored)
-            lines += "CPU left out where a run's steps in CPU time could skew it past " + fixed(100 * cpu_error_limit, 0) + "%\n";
+            lines += paint("CPU left out where a run's steps in CPU time could skew it past " + fixed(100 * cpu_error_limit, 0) + "%",
+                           Paint::Faint) +
+                     "\n";
         if (m_used.unjudged)
-            lines += "a change is not judged where a run has no CV, as with one iteration or a mean of zero\n";
+            lines += paint("a change is not judged where a run has no CV, as with one iteration or a mean of zero", Paint::Faint) + "\n";
         if (!lines.empty())
             m_out << "\n" << lines;
     }
