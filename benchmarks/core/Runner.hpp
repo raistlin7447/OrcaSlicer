@@ -2,6 +2,7 @@
 
 #include "core/Policy.hpp"
 #include "core/Result.hpp"
+#include "core/RunEvents.hpp"
 #include "core/Sampler.hpp"
 #include "core/Workload.hpp"
 
@@ -29,6 +30,6 @@ public:
 // entry name that validate() refuses or that repeats, since results are keyed by name. The probe reads
 // the process, through Host unless a test scripts it.
 Result run_suite(const std::vector<CatalogEntry>& entries, const Policy& policy, const WorkloadKinds& kinds,
-                 RunEnvironment& environment, const ProcessProbe& probe = host_reading);
+                 RunEnvironment& environment, const ProcessProbe& probe = host_reading, const RunEvents& events = {});
 
 }} // namespace Slic3r::Bench

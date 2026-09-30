@@ -91,6 +91,12 @@ StageStates stage_states(const Measurement& measurement)
     return {keys_of(measurement.timeline()), keys_of(measurement.unfinished_stages()), keys_of(measurement.stages_not_run())};
 }
 
+template<class Event, class... Args> void notify(const Event& event, Args&&... args)
+{
+    if (event)
+        event(std::forward<Args>(args)...);
+}
+
 // "warmup pass 1" or "timed pass 2", where pass counts from 1 across both.
 std::string pass_name(std::uint64_t pass, unsigned warmup)
 {
@@ -104,7 +110,7 @@ Clock::duration cpu_between(std::uint64_t before_ns, std::uint64_t after_ns)
 }
 
 WorkloadResult run_workload(const CatalogEntry& entry, const Policy& policy, const WorkloadKinds& kinds,
-                            const RunContext& context, const ProcessProbe& probe)
+                            const RunContext& context, const ProcessProbe& probe, const RunEvents& events)
 {
     const bool record_passes = policy.metrics.count(Metric::Wall) != 0;
     const bool record_hash   = policy.metrics.count(Metric::Hash) != 0;
@@ -182,6 +188,8 @@ WorkloadResult run_workload(const CatalogEntry& entry, const Policy& policy, con
                 iteration.metrics    = measurement.metrics();
                 iterations.push_back(std::move(iteration));
             }
+            call = "pass_done";
+            notify(events.pass_done, PassDone {pass, policy.warmup, passes, after.at - before.at});
         }
     } catch (const std::exception& error) {
         return threw(error.what());
@@ -194,7 +202,7 @@ WorkloadResult run_workload(const CatalogEntry& entry, const Policy& policy, con
 } // namespace
 
 Result run_suite(const std::vector<CatalogEntry>& entries, const Policy& policy, const WorkloadKinds& kinds,
-                 RunEnvironment& environment, const ProcessProbe& probe)
+                 RunEnvironment& environment, const ProcessProbe& probe, const RunEvents& events)
 {
     std::set<std::string> names;
     for (const CatalogEntry& entry : entries) {
@@ -212,13 +220,21 @@ Result run_suite(const std::vector<CatalogEntry>& entries, const Policy& policy,
 
     RunContext context;
     context.timed = policy.stages;
+    std::vector<const CatalogEntry*> admitted;
+    for (const CatalogEntry& entry : entries)
+        if (!policy.pgo_eligible_only || is_pgo_eligible(entry))
+            admitted.push_back(&entry);
     {
         const EnvironmentScope scope(environment, policy);
-        for (const CatalogEntry& entry : entries)
-            if (!policy.pgo_eligible_only || is_pgo_eligible(entry))
-                result.workloads.push_back(run_workload(entry, policy, kinds, context, probe));
+        notify(events.started, result);
+        for (std::size_t i = 0; i < admitted.size(); ++i) {
+            notify(events.workload_started, i + 1, admitted.size(), admitted[i]->name);
+            result.workloads.push_back(run_workload(*admitted[i], policy, kinds, context, probe, events));
+            notify(events.workload_done, result.workloads.back());
+        }
     }
     result.suite.duration = Clock::now() - started_at;
+    notify(events.finished, result);
     return result;
 }
 
