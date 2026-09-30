@@ -29,6 +29,8 @@ time it took before the pass.
 queries (resident memory, its peak, CPU time) answer 0 when the platform call fails. The machine
 queries (host name, OS, CPU model, logical cores) fall back to something coarser, such as the
 architecture in place of a CPU model, and to `"unknown"` only when nothing coarser exists.
+`cpu_time_step()` is the step the CPU time moves in, 15.625 ms on Windows, where `GetProcessTimes`
+charges each thread's time at the clock interrupt, and zero elsewhere.
 
 ## The result model
 
@@ -43,7 +45,8 @@ wall time and CPU time. Peak memory, the work stats and the output hash are opti
 may not collect them, and are then absent, never zero. A measurement only some producers record
 is stored in a `Metrics` map (name to number) on the span, the iteration or the work stats, keyed
 by a constant declared beside its producer, and a missing key means it was not collected. Build
-and machine identity have a `Properties` map (name to text) for the same purpose.
+and machine identity have a `Properties` map (name to text) for the same purpose, which holds the
+machine's CPU time step where it has one.
 
 An iteration also lists the steps that started and never finished, each with its start, and the
 timed steps that never started. With a span that took no time, which is a step that ran below the
