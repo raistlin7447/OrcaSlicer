@@ -91,6 +91,8 @@ struct WorkloadComparison
     std::optional<std::uint64_t> hash_a;
     std::optional<std::uint64_t> hash_b;
     std::vector<WorkDifference>  work_differences;
+    // Both runs reported work stats, so a hash that changed with no work difference changed values alone.
+    bool work_in_both = false;
     // The hashes or the work differ, so the times measure different work.
     bool                   output_changed = false;
     std::vector<StagePair> stages;
