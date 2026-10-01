@@ -102,6 +102,8 @@ struct WorkloadComparison
     std::optional<Change>  peak_rss_bytes;
     std::optional<double>  cpu_a;
     std::optional<double>  cpu_b;
+    bool                   cpu_below_floor_a = false;
+    bool                   cpu_below_floor_b = false;
     // The wall per million moves, per layer and per cm3 of extrusion, where both runs have the stat.
     std::optional<Change> per_million_moves;
     std::optional<Change> per_layer;
@@ -115,9 +117,14 @@ struct Comparison
     Result b;
     // Empty unless the options allowed a mismatch.
     std::vector<PropertyDifference> measurement;
+    // The stages are paired per scope, as CompareOptions::verbose asks.
+    bool verbose = false;
     // In a's order, then those only b has.
     std::vector<WorkloadComparison> workloads;
-    // Taken over the workloads compared with unchanged output, which geometric_mean_of counts.
+    // How many of the workloads compared changed their output.
+    std::size_t changed_outputs = 0;
+    // Taken over the workloads compared with unchanged output and a wall above zero in b, which
+    // geometric_mean_of counts.
     std::optional<double> wall_geometric_mean;
     std::size_t           geometric_mean_of = 0;
 };

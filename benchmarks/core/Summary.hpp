@@ -48,12 +48,12 @@ struct StageRow
     StageState  state = StageState::Ran;
     // The stage started without finishing at least once, which puts that time in unaccounted.
     bool unfinished = false;
-    // Over the iterations, of the row's span time summed within each one.
+    // Over the iterations with a span of the row, of its span time summed within each one.
     Millis      mean {};
     Millis      min {};
-    // The sample standard deviation over the mean, absent with one iteration or a zero mean.
+    // The sample standard deviation over the mean, absent with one such iteration or a zero mean.
     std::optional<double> cv;
-    // The mean over summed work.
+    // Its span time over summed work, each summed over every iteration, so the rows' shares add up to one.
     double                share = 0.0;
     // CPU time over the window it was measured in, absent where no span had one or below the floor.
     std::optional<double>        cpu;
@@ -61,8 +61,6 @@ struct StageRow
     std::optional<std::uint64_t> peak_rss_bytes;
     // A span of the row overlapped one outside it, whose work its readings include.
     bool shared = false;
-    // A significant change, which collapse() never folds.
-    bool significant = false;
     // The earliest start from its iteration's origin, for pipeline order, and the latest time for a
     // stage that never started.
     Clock::duration first_start = Clock::duration::max();
@@ -98,8 +96,7 @@ struct OtherRow
     double      share = 0.0;
 };
 
-// Whether a row under the threshold folds into the other row, which one marked unfinished or
-// significant never does.
+// Whether a row under the threshold folds into the other row, which one marked unfinished never does.
 bool folds(const StageRow& row, double below);
 
 // Moves each row that folds into the returned other row, and returns nothing when none does.

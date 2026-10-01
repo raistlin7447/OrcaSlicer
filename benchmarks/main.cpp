@@ -5,7 +5,6 @@
 #include "core/Reporters.hpp"
 #include "core/Workload.hpp"
 
-#include <algorithm>
 #include <cstdlib>
 #include <exception>
 #include <iostream>
@@ -25,11 +24,9 @@ int compare_files(const Options& options)
     CompareView      view;
     view.label_a = options.compare->a;
     view.label_b = options.compare->b;
-    view.color   = use_color(options.color, enable_terminal_escapes(), std::getenv("NO_COLOR"));
+    view.color   = use_color(options.color, enable_terminal_escapes(), std::getenv("NO_COLOR"), std::getenv("TERM"));
     write_comparison(std::cout, comparison, view);
-    const bool changed = std::any_of(comparison.workloads.begin(), comparison.workloads.end(),
-                                     [](const WorkloadComparison& workload) { return workload.output_changed; });
-    return changed ? 3 : 0;
+    return comparison.changed_outputs > 0 ? 3 : 0;
 }
 
 } // namespace

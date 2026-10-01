@@ -20,7 +20,6 @@ using RowKey = std::pair<std::string, std::string>;
 // What summarize() gathers for one row across the iterations.
 struct Tally
 {
-    std::vector<Clock::duration> per_iteration;
     bool                         ran        = false;
     bool                         instant    = true;
     bool                         unfinished = false;
@@ -30,6 +29,8 @@ struct Tally
     std::size_t                  windows    = 0;
     std::optional<std::uint64_t> peak_rss_bytes;
     Clock::duration              first_start = Clock::duration::max();
+    // Absent for an iteration with no span of the row, such as one where it never finished, whose time is unknown.
+    std::vector<std::optional<Clock::duration>> per_iteration;
 };
 
 double nanoseconds(Clock::duration duration) { return std::chrono::duration<double, std::nano>(duration).count(); }
@@ -124,12 +125,12 @@ WorkloadSummary summarize(const WorkloadResult& workload, const Result& header, 
             Tally& tally = tally_of(key_of(span.stage, span.scope));
             span_tallies.push_back(&tally);
             const Clock::duration length = span.done_at - span.started_at;
-            tally.per_iteration[i] += length;
-            tally.ran         = true;
-            tally.instant     = tally.instant && length == Clock::duration::zero();
-            tally.first_start = std::min(tally.first_start, span.started_at - zero);
-            const auto used   = span.metrics.find(SampledMetric::cpu_ns);
-            const auto window = span.metrics.find(SampledMetric::cpu_window_ns);
+            tally.per_iteration[i]       = tally.per_iteration[i].value_or(Clock::duration::zero()) + length;
+            tally.ran                    = true;
+            tally.instant                = tally.instant && length == Clock::duration::zero();
+            tally.first_start            = std::min(tally.first_start, span.started_at - zero);
+            const auto used              = span.metrics.find(SampledMetric::cpu_ns);
+            const auto window            = span.metrics.find(SampledMetric::cpu_window_ns);
             if (used != span.metrics.end() && window != span.metrics.end()) {
                 tally.cpu_ns += used->second;
                 tally.window_ns += window->second;
@@ -194,15 +195,20 @@ WorkloadSummary summarize(const WorkloadResult& workload, const Result& header, 
             continue;
         }
         row.state = tally.instant ? StageState::Instant : StageState::Ran;
+        Clock::duration     total {};
         std::vector<double> times;
-        for (const Clock::duration length : tally.per_iteration)
-            times.push_back(Millis(length).count());
+        for (const std::optional<Clock::duration>& length : tally.per_iteration) {
+            if (!length)
+                continue;
+            total += *length;
+            times.push_back(Millis(*length).count());
+        }
         const Spread spread = spread_of(times);
         row.mean            = Millis(spread.mean);
         row.min             = Millis(spread.min);
         row.cv              = spread.cv;
         if (summary.summed_work.count() > 0)
-            row.share = row.mean / summary.summed_work;
+            row.share = Millis(total) / double(count) / summary.summed_work;
         if (tally.windows > 0) {
             if (below_floor(header, tally.windows, tally.cpu_ns))
                 row.cpu_below_floor = true;
@@ -216,7 +222,7 @@ WorkloadSummary summarize(const WorkloadResult& workload, const Result& header, 
     return summary;
 }
 
-bool folds(const StageRow& row, double below) { return !row.unfinished && !row.significant && row.share < below; }
+bool folds(const StageRow& row, double below) { return !row.unfinished && row.share < below; }
 
 std::optional<OtherRow> collapse(std::vector<StageRow>& rows, double below)
 {

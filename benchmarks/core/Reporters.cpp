@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <iterator>
+#include <limits>
 #include <optional>
 #include <ostream>
 #include <sstream>
@@ -400,6 +401,15 @@ std::string utc_minute(decltype(Suite::started_at) time)
     return iso.substr(0, 10) + " " + iso.substr(11, 5) + " UTC";
 }
 
+// A line per difference after the indent, with - for the run that lacks the key.
+std::string difference_lines(const std::vector<PropertyDifference>& differences, const std::string& indent)
+{
+    std::string lines;
+    for (const PropertyDifference& difference : differences)
+        lines += indent + difference.key + "  " + difference.a.value_or("-") + " -> " + difference.b.value_or("-") + "\n";
+    return lines;
+}
+
 std::string cv_text(const std::optional<double>& cv) { return cv ? percent(*cv) : "-"; }
 
 std::string cpu_text(const std::optional<double>& cpu) { return cpu ? fixed(*cpu, 1) + "x" : "-"; }
@@ -443,7 +453,8 @@ std::string work_value(const std::string& name, double value)
 {
     if (name == "extrusion_mm3")
         return fixed(value / 1000, 1);
-    if (value >= 0 && value == std::floor(value))
+    // The cast is undefined for a value past the largest count, which a hand-edited result may hold.
+    if (value >= 0 && value < double(std::numeric_limits<std::uint64_t>::max()) && value == std::floor(value))
         return grouped(static_cast<std::uint64_t>(value));
     return fixed(value, 1);
 }
@@ -481,6 +492,63 @@ Clock::duration earliest(const StagePair& pair)
     return first;
 }
 
+// The text with each control character as a space where it is whitespace and as ? otherwise, so text
+// a document carries cannot send the terminal a sequence of its own.
+std::string printable(const std::string& text)
+{
+    std::string shown;
+    for (std::size_t at = 0; at < text.size(); ++at) {
+        const auto          byte = static_cast<unsigned char>(text[at]);
+        const unsigned char next = at + 1 < text.size() ? static_cast<unsigned char>(text[at + 1]) : 0;
+        // UTF-8 writes the C1 controls, U+0080 to U+009F, as C2 80 to C2 9F.
+        const bool c1 = byte == 0xC2 && next >= 0x80 && next < 0xA0;
+        if (c1 || byte < 0x20 || byte == 0x7F)
+            shown += byte >= '\t' && byte <= '\r' ? ' ' : '?';
+        else
+            shown += text[at];
+        if (c1)
+            ++at;
+    }
+    return shown;
+}
+
+// The comparison with every text it took from the documents printable.
+Comparison printable(Comparison comparison)
+{
+    const auto clean = [](Properties& properties) {
+        Properties shown;
+        for (const auto& [key, value] : properties)
+            shown.emplace(printable(key), printable(value));
+        properties = std::move(shown);
+    };
+    for (Result* run : {&comparison.a, &comparison.b}) {
+        clean(run->measurement);
+        clean(run->build.properties);
+        clean(run->machine.properties);
+        for (std::string* text : {&run->build.revision, &run->build.compiler, &run->build.compiler_version, &run->build.config,
+                                  &run->build.flags, &run->machine.host, &run->machine.os, &run->machine.cpu})
+            *text = printable(*text);
+    }
+    for (PropertyDifference& difference : comparison.measurement) {
+        difference.key = printable(difference.key);
+        if (difference.a)
+            difference.a = printable(*difference.a);
+        if (difference.b)
+            difference.b = printable(*difference.b);
+    }
+    for (WorkloadComparison& workload : comparison.workloads) {
+        workload.name         = printable(workload.name);
+        workload.not_compared = printable(workload.not_compared);
+        for (WorkDifference& difference : workload.work_differences)
+            difference.name = printable(difference.name);
+        for (StagePair& pair : workload.stages) {
+            pair.stage = printable(pair.stage);
+            pair.scope = printable(pair.scope);
+        }
+    }
+    return comparison;
+}
+
 class CompareWriter
 {
 public:
@@ -495,14 +563,11 @@ public:
         changed_output();
         bool        tables   = summary();
         std::size_t compared = 0;
-        std::size_t changed  = 0;
         std::size_t skipped  = 0;
         for (const WorkloadComparison& workload : m_comparison.workloads) {
             if (!workload.not_compared.empty())
                 continue;
             ++compared;
-            if (workload.output_changed)
-                ++changed;
             tables = write_workload(workload) || tables;
         }
         for (const WorkloadComparison& workload : m_comparison.workloads) {
@@ -514,7 +579,7 @@ public:
         }
         legend(tables);
         m_out << "\n"
-              << compared << " compared, " << changed << " with changed output, " << skipped << " not compared\n"
+              << compared << " compared, " << m_comparison.changed_outputs << " with changed output, " << skipped << " not compared\n"
               << std::flush;
     }
 
@@ -548,8 +613,7 @@ private:
         run_line("b", b, m_view.label_b);
         if (a.build.flags != b.build.flags)
             m_out << "   a flags  " << a.build.flags << "\n   b flags  " << b.build.flags << "\n";
-        for (const PropertyDifference& difference : property_differences(a.build.properties, b.build.properties))
-            m_out << "   " << difference.key << "  " << difference.a.value_or("-") << " -> " << difference.b.value_or("-") << "\n";
+        m_out << difference_lines(property_differences(a.build.properties, b.build.properties), "   ");
 
         const auto machine_text = [](const MachineIdentity& machine) {
             return machine.host + "  " + machine.os + "  " + machine.cpu + "  " + std::to_string(machine.logical_cores) + " cores";
@@ -558,24 +622,22 @@ private:
             m_out << "   " << machine_text(a.machine) << "\n";
         else
             m_out << "   a  " << machine_text(a.machine) << "\n   b  " << machine_text(b.machine) << "\n";
-        for (const PropertyDifference& difference : property_differences(a.machine.properties, b.machine.properties))
-            m_out << "   " << difference.key << "  " << difference.a.value_or("-") << " -> " << difference.b.value_or("-") << "\n";
+        m_out << difference_lines(property_differences(a.machine.properties, b.machine.properties), "   ");
     }
 
     void measured_differently()
     {
         if (m_comparison.measurement.empty())
             return;
-        m_out << "\n" << paint("MEASURED DIFFERENTLY", Paint::Alarm) << ", compared because that was allowed\n";
-        for (const PropertyDifference& difference : m_comparison.measurement)
-            m_out << "  " << difference.key << "  " << difference.a.value_or("-") << " -> " << difference.b.value_or("-") << "\n";
+        m_out << "\n" << paint("MEASURED DIFFERENTLY", Paint::Alarm) << ", compared because that was allowed\n"
+              << difference_lines(m_comparison.measurement, "  ");
     }
 
     void changed_output()
     {
         std::vector<const WorkloadComparison*> changed;
         for (const WorkloadComparison& workload : m_comparison.workloads)
-            if (workload.not_compared.empty() && workload.output_changed)
+            if (workload.output_changed)
                 changed.push_back(&workload);
         if (changed.empty())
             return;
@@ -653,7 +715,7 @@ private:
             std::sort(pairs.begin(), pairs.end(), [](const StagePair& x, const StagePair& y) {
                 return largest(x) != largest(y) ? largest(x) > largest(y) : std::tie(x.stage, x.scope) < std::tie(y.stage, y.scope);
             });
-        const std::optional<OtherPair> other = m_view.verbose ? std::nullopt : collapse(pairs, m_view.collapse_below);
+        const std::optional<OtherPair> other = m_comparison.verbose ? std::nullopt : collapse(pairs, m_view.collapse_below);
 
         const std::string heading = both("min a", "min b", figure_width) + right("change", figure_width) +
                                     std::string(2 + verdict_width, ' ') + right("diff", figure_width) + right("by mean", figure_width) +
@@ -674,6 +736,8 @@ private:
         m_out << "  " << paint(std::string(compare_width - 2, '-'), Paint::Faint) << "\n";
         figure_row("summed work", workload.summed_work, time_words);
         figure_row("unaccounted", workload.unaccounted, time_words);
+        if (workload.wall)
+            m_used.floored = m_used.floored || workload.cpu_below_floor_a || workload.cpu_below_floor_b;
         figure_row("wall", workload.wall, time_words, 1.0, cpu_text(workload.cpu_a), cpu_text(workload.cpu_b));
         if (workload.output_changed) {
             figure_row("per 1M moves", workload.per_million_moves, speed_words);
@@ -687,19 +751,22 @@ private:
     std::string pair_row(const StagePair& pair, const Words& words)
     {
         const std::string name = pair.scope.empty() ? pair.stage : pair.stage + " " + pair.scope;
-        if (!pair.time) {
+        if (!pair.a || !pair.b || pair.a->state != StageState::Ran || pair.b->state != StageState::Ran) {
             const auto  unfinished = [](const std::optional<StageRow>& row) { return row && row->state == StageState::Unfinished; };
             const Paint named      = pair.significant ? Paint::Strong : Paint::Plain;
             const Paint state      = unfinished(pair.a) || unfinished(pair.b) ? Paint::Worse : named;
             return name_cell(paint(name, named)) + paint(state_text(pair), state) + "\n";
         }
-        const Paint row    = row_paint(*pair.time);
+        const Paint row    = pair.time ? row_paint(*pair.time) : Paint::Plain;
         const bool  shared = pair.a->shared || pair.b->shared;
         const bool  partly = pair.a->unfinished || pair.b->unfinished;
         m_used.shared      = m_used.shared || shared;
         m_used.unfinished  = m_used.unfinished || partly;
         const std::string marked = paint(name, row) + (shared ? paint("*", Paint::Faint) : "") + (partly ? paint("!", Paint::Worse) : "");
-        const std::string cells  = change_cells(*pair.time, words, 1.0) + both(stage_cpu(*pair.a), stage_cpu(*pair.b), small_width, row) +
+        // A minimum of zero in a gives no change, so the row shows only the minimums.
+        if (!pair.time)
+            return trimmed_end(name_cell(marked) + both(milliseconds(pair.a->min), milliseconds(pair.b->min), figure_width)) + "\n";
+        const std::string cells = change_cells(*pair.time, words, 1.0) + both(stage_cpu(*pair.a), stage_cpu(*pair.b), small_width, row) +
                                   both(stage_peak(*pair.a), stage_peak(*pair.b), figure_width, row);
         return trimmed_end(name_cell(marked) + cells) + "\n";
     }
@@ -815,7 +882,7 @@ private:
                            Paint::Faint) +
                      "\n";
         if (m_used.unjudged)
-            lines += paint("a change is not judged where a run has one iteration, which gives no CV", Paint::Faint) + "\n";
+            lines += paint("a change is not judged where a run has no CV, as with one iteration or a mean of zero", Paint::Faint) + "\n";
         if (!lines.empty())
             m_out << "\n" << lines;
     }
@@ -937,7 +1004,10 @@ RunEvents report_events(Reporter& reporter, Progress* progress)
 
 void write_comparison(std::ostream& out, const Comparison& comparison, const CompareView& view)
 {
-    CompareWriter(out, comparison, view).write();
+    CompareView shown = view;
+    shown.label_a     = printable(view.label_a);
+    shown.label_b     = printable(view.label_b);
+    CompareWriter(out, printable(comparison), shown).write();
 }
 
 }} // namespace Slic3r::Bench

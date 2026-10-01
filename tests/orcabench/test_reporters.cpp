@@ -576,21 +576,22 @@ CompareView file_view()
     return view;
 }
 
-std::string compare_text(const Result& a, const Result& b, const CompareView& view = file_view(), bool allow_mismatch = false)
+std::string compare_text(const Result& a, const Result& b, const CompareView& view = file_view(), bool allow_mismatch = false,
+                         bool verbose = false)
 {
     std::ostringstream out;
-    write_comparison(out, compare(a, b, {allow_mismatch, view.verbose}), view);
+    write_comparison(out, compare(a, b, {allow_mismatch, verbose}), view);
     return out.str();
 }
 
 bool has_line(const std::string& text, const std::string& line) { return text.find("\n" + line + "\n") != std::string::npos; }
 
-const std::string worse  = "\x1b[1;38;5;166m";
-const std::string better = "\x1b[1;38;5;32m";
-const std::string alarm  = "\x1b[7m";
-const std::string strong = "\x1b[1m";
-const std::string faint  = "\x1b[2m";
-const std::string reset  = "\x1b[0m";
+const std::string worse   = "\x1b[1;38;5;166m";
+const std::string better  = "\x1b[1;38;5;32m";
+const std::string inverse = "\x1b[7m";
+const std::string strong  = "\x1b[1m";
+const std::string faint   = "\x1b[2m";
+const std::string reset   = "\x1b[0m";
 
 std::string without_color(const std::string& text) { return std::regex_replace(text, std::regex("\x1b\\[[0-9;]*m"), ""); }
 
@@ -669,10 +670,8 @@ TEST_CASE("each column of a comparison's tables holds one unit at one decimal, f
 {
     const std::string variant = GENERATE(as<std::string> {}, "three iterations", "verbose", "one iteration");
     CAPTURE(variant);
-    CompareView view = file_view();
-    view.verbose     = variant == "verbose";
-    const std::string text = variant == "one iteration" ? compare_text(first_iteration_of(before()), first_iteration_of(after()), view)
-                                                        : compare_text(before(), after(), view);
+    const std::string text = variant == "one iteration" ? compare_text(first_iteration_of(before()), first_iteration_of(after()))
+                                                        : compare_text(before(), after(), file_view(), false, variant == "verbose");
 
     const std::string headings[] = {"wall a", "wall b", "min a", "min b", "change", "diff", "by mean",
                                     "CV a",   "CV b",   "CPU a", "CPU b", "MiB a",  "MiB b"};
@@ -754,9 +753,7 @@ TEST_CASE("a hash or work stat only one run recorded shows as none", "[OrcaBench
 
 TEST_CASE("a comparison under --verbose gives each scope its own row and folds nothing", "[OrcaBench][Reporters]")
 {
-    CompareView view = file_view();
-    view.verbose     = true;
-    const std::string text = compare_text(before(), after(), view);
+    const std::string text = compare_text(before(), after(), file_view(), false, true);
     const std::string rows =
         "  psGCodeExport print             804.6   812.3   +1.0%             +7.7   +0.8%  0.5%  0.4%     -     -   412.0   415.0\n"
         "  posInfill object:0               90.0    83.1   -7.7%  faster     -6.9   -6.8%  1.4%  2.1% 14.8x 15.0x   398.0   391.0\n"
@@ -795,7 +792,7 @@ TEST_CASE("a change over one iteration is shown but not judged", "[OrcaBench][Re
         "  slice/voron-cube/standard-0.20              412.7   395.1   -4.3%                   -17.6     -     -       -       -";
     CHECK(has_line(text, infill));
     CHECK(has_line(text, cube));
-    CHECK(has_line(text, "a change is not judged where a run has one iteration, which gives no CV"));
+    CHECK(has_line(text, "a change is not judged where a run has no CV, as with one iteration or a mean of zero"));
     CHECK(text.find("slower, faster") == std::string::npos);
 }
 
@@ -861,6 +858,50 @@ TEST_CASE("a workload compared without timed passes shows only its title", "[Orc
                                  "1 compared, 0 with changed output, 0 not compared\n");
 }
 
+TEST_CASE("a stage whose minimum in a is zero shows both minimums and no change", "[OrcaBench][Reporters]")
+{
+    Result     a       = before();
+    StageSpan& stalled = a.workloads[0].iterations[0].timeline[1];
+    REQUIRE(stalled.stage == "posPerimeters");
+    stalled.done_at = stalled.started_at;
+    CHECK(has_line(compare_text(a, after()), "  posPerimeters                     0.0    68.9"));
+}
+
+TEST_CASE("a workload's CPU left out below the floor brings the floor's legend", "[OrcaBench][Reporters]")
+{
+    const auto cube_only = [](Result run) {
+        run.machine.properties = {{MachineProperty::cpu_time_step_ns, "15625000"}};
+        run.workloads          = {run.workloads[1]};
+        return run;
+    };
+    const std::string text = compare_text(cube_only(before()), cube_only(after()));
+    CHECK(has_line(text, "  wall                            412.7   395.1   -4.3%  faster    -17.6   -4.3%  0.7%  0.5%     -     -"));
+    CHECK(has_line(text, "CPU left out where a run's steps in CPU time could skew it past 10%"));
+}
+
+TEST_CASE("a work stat too large for a count prints as a plain figure", "[OrcaBench][Reporters]")
+{
+    Result a                                      = before();
+    Result b                                      = after();
+    a.workloads[2].work->metrics["moves.support"] = std::ldexp(1.0, 64);
+    b.workloads[2].work->metrics["moves.support"] = std::ldexp(1.0, 65);
+    CHECK(has_line(compare_text(a, b), std::string(44, ' ') + "moves.support 18446744073709551616.0 -> 36893488147419103232.0  +100.0%"));
+}
+
+TEST_CASE("a comparison prints each control character in a document's text as a space or ?", "[OrcaBench][Reporters]")
+{
+    Result b               = after();
+    b.build.flags          = "/O2\a";
+    b.workloads[3].reason  = "fixture\tnot available: \x1b[2J\xc2\x9bK";
+    CompareView view       = file_view();
+    view.label_b           = "after\x1b[31m.json";
+    const std::string text = compare_text(before(), b, view);
+    CHECK(has_line(text, "   b flags  /O2?"));
+    CHECK(has_line(text, "  skipped in b: fixture not available: ?[2J?K"));
+    CHECK(text.find("Release  after?[31m.json\n") != std::string::npos);
+    CHECK(text.find('\x1b') == std::string::npos);
+}
+
 TEST_CASE("color changes no character of either view", "[OrcaBench][Reporters]")
 {
     SECTION("a run")
@@ -889,11 +930,10 @@ TEST_CASE("color changes no character of either view", "[OrcaBench][Reporters]")
             {before(), after()}, {a, b}, {before(), mismatched}, {first_iteration_of(before()), first_iteration_of(after())}};
         for (const auto& [x, y] : runs)
             for (const bool verbose : {false, true}) {
-                CompareView view        = file_view();
-                view.verbose            = verbose;
-                const std::string plain = compare_text(x, y, view, true);
+                CompareView       view  = file_view();
+                const std::string plain = compare_text(x, y, view, true, verbose);
                 view.color              = true;
-                const std::string text  = compare_text(x, y, view, true);
+                const std::string text  = compare_text(x, y, view, true, verbose);
                 CHECK(text != plain);
                 CHECK(without_color(text) == plain);
             }
@@ -906,8 +946,8 @@ TEST_CASE("a colored comparison paints verdicts, alarms and what fell below the 
     view.color       = true;
     const std::string text = compare_text(before(), after(), view);
     CHECK_THAT(text, StartsWith(strong + "orca_bench compare" + reset + "  quick"));
-    CHECK_THAT(text, ContainsSubstring(alarm + "OUTPUT CHANGED" + reset + " in 1 workload"));
-    CHECK_THAT(text, ContainsSubstring(alarm + "output changed" + reset));
+    CHECK_THAT(text, ContainsSubstring(inverse + "OUTPUT CHANGED" + reset + " in 1 workload"));
+    CHECK_THAT(text, ContainsSubstring(inverse + "output changed" + reset));
     CHECK_THAT(text, ContainsSubstring(strong + "slice/voron-cube/standard-0.20" + reset + " "));
     CHECK_THAT(text, ContainsSubstring(better + "-4.3%" + reset + "  " + better + "faster" + reset));
     CHECK_THAT(text, ContainsSubstring(faint + "output unchanged" + reset));
@@ -936,6 +976,6 @@ TEST_CASE("a colored run paints outcomes, stages that never finished and its mar
     CHECK_THAT(text, ContainsSubstring(worse + "never finished" + reset));
     CHECK_THAT(text, ContainsSubstring("4.6%" + faint + "~" + reset));
     CHECK_THAT(text, ContainsSubstring(strong + "SKIPPED" + reset));
-    CHECK_THAT(text, ContainsSubstring(alarm + "FAILED" + reset));
+    CHECK_THAT(text, ContainsSubstring(inverse + "FAILED" + reset));
     CHECK_THAT(text, ContainsSubstring(faint + "~ CV above the 3% significance bar"));
 }

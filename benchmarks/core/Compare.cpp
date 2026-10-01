@@ -195,6 +195,8 @@ WorkloadComparison compare_workload(const std::string& name, const Result& a, co
     compared.stages                 = pair_stages(summary_a.rows, summary_b.rows);
     compared.cpu_a                  = summary_a.cpu;
     compared.cpu_b                  = summary_b.cpu;
+    compared.cpu_below_floor_a      = summary_a.cpu_below_floor;
+    compared.cpu_below_floor_b      = summary_b.cpu_below_floor;
 
     const Totals totals_a   = totals_of(*in_a);
     const Totals totals_b   = totals_of(*in_b);
@@ -236,8 +238,9 @@ Comparison compare(const Result& a, const Result& b, const CompareOptions& optio
             listed += "\n  " + difference.key + "  " + difference.a.value_or("-") + " -> " + difference.b.value_or("-");
         throw CompareError("the runs measured differently, so they are not compared:" + listed);
     }
-    comparison.a = Result {a.suite, a.measurement, a.build, a.machine, {}};
-    comparison.b = Result {b.suite, b.measurement, b.build, b.machine, {}};
+    comparison.a       = Result {a.suite, a.measurement, a.build, a.machine, {}};
+    comparison.b       = Result {b.suite, b.measurement, b.build, b.machine, {}};
+    comparison.verbose = options.verbose;
 
     std::vector<std::string> names;
     for (const WorkloadResult& workload : a.workloads)
@@ -249,7 +252,10 @@ Comparison compare(const Result& a, const Result& b, const CompareOptions& optio
     for (const std::string& name : names) {
         comparison.workloads.push_back(compare_workload(name, a, b, options));
         const WorkloadComparison& workload = comparison.workloads.back();
-        if (workload.not_compared.empty() && !workload.output_changed && workload.wall) {
+        if (workload.output_changed)
+            ++comparison.changed_outputs;
+        // A wall of zero in b has no logarithm, and would take the mean to -100%.
+        if (workload.not_compared.empty() && !workload.output_changed && workload.wall && workload.wall->b.min > 0) {
             log_sum += std::log1p(workload.wall->change);
             ++comparison.geometric_mean_of;
         }

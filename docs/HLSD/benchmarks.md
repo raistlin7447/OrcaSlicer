@@ -230,17 +230,17 @@ parser's own exceptions to it, so no caller needs nlohmann to catch them.
 
 `Summary.cpp` turns a workload's iterations into rows of stages and totals. A stage's row sums its
 spans across objects within each iteration, then takes the mean, the minimum and the coefficient of
-variation over the iterations, and its share is its mean over summed work, the sum of the rows. In
-verbose mode each scope gets its own row. The wall envelope is the mean iteration wall time, and
-unaccounted is the mean time no span covers, so objects slicing side by side can take summed work
-past the wall envelope but cannot make unaccounted negative. Each row carries its stage's state, so
-the four stay apart.
+variation over the iterations that have a span of it, since one in which it never finished recorded
+none of its time. Its share is its span time over summed work, the sum of the rows, both over all
+the iterations. In verbose mode each scope gets its own row. The wall envelope is the mean iteration
+wall time, and unaccounted is the mean time no span covers, so objects slicing side by side can take
+summed work past the wall envelope but cannot make unaccounted negative. Each row carries its
+stage's state, so the four stay apart.
 
 `collapse()` folds the rows under 1% of summed work into one other row, which counts the stages that
 never ran. A row whose stage started without finishing at least once never folds, even when it also
-ran, since the time it hides lands in unaccounted, and neither does a row marked significant, so a
-change that matters stays visible however small the stage. A row whose CV exceeds the 3%
-significance bar is noisy, since a change that size there cannot be told from noise.
+ran, since the time it hides lands in unaccounted. A row whose CV exceeds the 3% significance bar is
+noisy, since a change that size there cannot be told from noise.
 
 Each row also carries its sampled CPU and peak memory, and is marked shared when its spans
 overlapped another row's, since its readings then include that work. A CPU figure is left out when
@@ -265,9 +265,10 @@ writes the result itself, so nothing folds in it.
 Both console views can color their text, as a second channel that never carries meaning the words
 lack, so a pasted log, a monochrome screenshot or a colorblind reader loses nothing. Bold vermillion
 marks worse and bold blue better, never red against green, inverse marks an alarm and dim what did
-not clear the bar. Color is on when standard output is a terminal and `NO_COLOR` is unset or empty,
-and `--color` overrides both. `Host` turns on escape sequences in a Windows console, and a terminal
-that hands programs a pipe, as mintty does, gets color only from `--color always`.
+not clear the bar. Color is on when standard output is a terminal, `TERM` is not `dumb` and
+`NO_COLOR` is unset or empty, and `--color` overrides all three. `Host` turns on escape sequences in
+a Windows console, and a terminal that hands programs a pipe, as mintty does, gets color only from
+`--color always`.
 
 `Progress` shows where a run is on stderr, apart from the report, so piping `json` never carries it.
 In a log it prints a line as each workload starts. In a terminal it redraws one line after each
@@ -287,8 +288,8 @@ Every figure is the minimum over the iterations: each stage, summed work, unacco
 and peak memory. Interference only ever adds time, so the minimum is the steadiest estimate of what
 the code costs, and the change of the mean prints beside it to show a spread that moved. A change
 counts when it reaches the 3% significance bar and exceeds both runs' CV. One that reaches the bar
-inside a CV is marked `~` as possible noise, and with one iteration there is no CV, so nothing is
-judged.
+inside a CV is marked `~` as possible noise, and a run with one iteration or a mean of zero has no
+CV, so a change there is not judged.
 
 Output comes before time. A workload whose output hash or work stats differ measures different work,
 so the comparison lists every hash and stat that changed before any time, and words such a
@@ -299,8 +300,10 @@ only one run has, is significant, and pairs fold into the other row only when sm
 unchanged, so a stage that grew surfaces however small it was before.
 
 Each column of the view holds one unit at one precision, and the view is as wide as its columns, up
-to 120. `orca_bench` exits 0 after a comparison, 3 when a workload's output changed, 1 when it
-refuses the runs or cannot read a document, and 2 for a bad command line.
+to 120. A control character in a document's text prints as a space or `?`, so a document cannot send
+the terminal escape sequences of its own. `orca_bench` exits 0 after a comparison, 3 when a
+workload's output changed, 1 when it refuses the runs or cannot read a document, and 2 for a bad
+command line.
 
 The two runs are timed apart, one after the other, so anything that changes on the machine between
 them, such as its temperature or a background job, moves the figures as a code change would, and the

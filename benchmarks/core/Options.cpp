@@ -38,7 +38,7 @@ constexpr Flag flags[] = {
     {"--allow-mismatch", "", [](Options& options, const std::string_view*) { options.allow_mismatch = true; },
      "compare results that measured differently"},
     {"--color", "auto|always|never", [](Options& options, const std::string_view* values) { options.color = color_choice(values[0]); },
-     "color the output, where auto colors a terminal unless NO_COLOR is set"},
+     "color the output, auto for a terminal unless TERM=dumb or NO_COLOR is non-empty"},
     {"--help", "", [](Options& options, const std::string_view*) { options.help = true; }, "print this text"},
 };
 
@@ -76,6 +76,8 @@ Options parse_options(const std::vector<std::string_view>& arguments)
         found->set(options, arguments.data() + i + 1);
         i += count;
     }
+    if (options.allow_mismatch && !options.compare)
+        throw OptionsError("--allow-mismatch needs --compare");
     return options;
 }
 
@@ -90,10 +92,10 @@ std::string usage()
     return text + "exit status: 0 done, 1 error, 2 bad command line, 3 --compare found changed output\n";
 }
 
-bool use_color(ColorChoice choice, bool terminal, const char* no_color)
+bool use_color(ColorChoice choice, bool terminal, const char* no_color, const char* term)
 {
     if (choice == ColorChoice::Auto)
-        return terminal && (no_color == nullptr || *no_color == '\0');
+        return terminal && (no_color == nullptr || *no_color == '\0') && (term == nullptr || std::string_view(term) != "dumb");
     return choice == ColorChoice::Always;
 }
 

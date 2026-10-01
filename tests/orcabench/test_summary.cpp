@@ -155,6 +155,24 @@ TEST_CASE("a stage that ran in one scope and never finished in another is a stag
     CHECK(row.unfinished);
 }
 
+TEST_CASE("a row's figures come from the iterations with a span of it, and its share from every iteration", "[OrcaBench][Summary]")
+{
+    const auto curled = [](Clock::duration length) {
+        return iteration_of(50ms,
+                            {span_of("posSlice", "object:0", 0ms, 32ms), span_of("posEstimateCurledExtrusions", "object:0", 32ms, length)});
+    };
+    IterationResult unfinished       = iteration_of(50ms, {span_of("posSlice", "object:0", 0ms, 32ms)});
+    unfinished.unfinished            = {{"posEstimateCurledExtrusions", "object:0", Clock::time_point {} + 32ms}};
+    const WorkloadSummary summary    = summarize(ran({curled(10ms), unfinished, curled(14ms)}), fine_grained, false);
+    const StageRow&       curled_row = row_of(summary, "posEstimateCurledExtrusions");
+    CHECK(curled_row.unfinished);
+    CHECK_THAT(curled_row.mean.count(), WithinAbs(12.0, 1e-9));
+    CHECK_THAT(curled_row.min.count(), WithinAbs(10.0, 1e-9));
+    REQUIRE(curled_row.cv.has_value());
+    CHECK_THAT(*curled_row.cv, WithinRel(std::sqrt(8.0) / 12, 1e-12));
+    CHECK_THAT(curled_row.share, WithinAbs(0.2, 1e-12));
+}
+
 TEST_CASE("a stage is instant only when every span of it took no time", "[OrcaBench][Summary]")
 {
     const WorkloadSummary summary = summarize(ran({iteration_of(10ms, {span_of("posContouring", "object:0", 0ms, 1us)}),
@@ -376,18 +394,16 @@ TEST_CASE("the other row counts the stages that never ran", "[OrcaBench][Summary
     CHECK(other->not_run == 1);
 }
 
-TEST_CASE("a row that never finished somewhere and a significant row never fold", "[OrcaBench][Summary]")
+TEST_CASE("a row that never finished somewhere never folds", "[OrcaBench][Summary]")
 {
-    StageRow partly = row_with("posSupportMaterial", 0.002);
+    StageRow partly   = row_with("posSupportMaterial", 0.002);
     partly.unfinished = true;
-    StageRow significant = row_with("posSlice", 0.002);
-    significant.significant = true;
-    std::vector<StageRow> rows {row_with("posEstimateCurledExtrusions", 0, StageState::Unfinished), partly, significant,
-                                row_with("posPerimeters", 0.002), row_with("posInfill", 0.994)};
+    std::vector<StageRow> rows {row_with("posEstimateCurledExtrusions", 0, StageState::Unfinished), partly,
+                                row_with("posPerimeters", 0.002), row_with("posInfill", 0.996)};
     const std::optional<OtherRow> other = collapse(rows, 0.01);
     REQUIRE(other.has_value());
     CHECK(other->stages == 1);
-    CHECK(stages_of(rows) == std::vector<std::string> {"posEstimateCurledExtrusions", "posSupportMaterial", "posSlice", "posInfill"});
+    CHECK(stages_of(rows) == std::vector<std::string> {"posEstimateCurledExtrusions", "posSupportMaterial", "posInfill"});
 }
 
 TEST_CASE("no other row is made when nothing is under the threshold", "[OrcaBench][Summary]")

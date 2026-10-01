@@ -168,6 +168,15 @@ TEST_CASE("output both runs share is unchanged, and a hash only one run has is a
     CHECK(only_workload(compare(hashed, run_of({ran("slice/idler", {pass}, std::nullopt)}), {})).output_changed);
 }
 
+TEST_CASE("a comparison counts the workloads compared whose output changed", "[OrcaBench][Compare]")
+{
+    const std::vector<IterationResult> pass = {iteration_of(100ms, {{"posSlice", 50ms}})};
+    const Result a = run_of({ran("slice/idler", pass, 1), ran("slice/cube", pass, 1), ran("slice/benchy", pass, 1)});
+    const Result b = run_of({ran("slice/idler", pass, 2), ran("slice/cube", pass, 1),
+                             WorkloadResult::skipped("slice/benchy", "fixture not available")});
+    CHECK(compare(a, b, {}).changed_outputs == 1);
+}
+
 TEST_CASE("a change is the change of the minimum, with the mean's beside it", "[OrcaBench][Compare]")
 {
     const auto run = [](std::vector<Clock::duration> times) {
@@ -219,6 +228,36 @@ TEST_CASE("a stage that changed state, or that one run lacks, is significant", "
     CHECK_FALSE(pair_of(idler, "posSlice").significant);
 }
 
+TEST_CASE("a stage that never finished in some iterations compares the iterations it finished in", "[OrcaBench][Compare]")
+{
+    const auto finished = [](Clock::duration length) {
+        return iteration_of(200ms, {{"posSlice", 50ms}, {"posEstimateCurledExtrusions", length}});
+    };
+    IterationResult unfinished      = iteration_of(200ms, {{"posSlice", 50ms}});
+    unfinished.unfinished           = {{"posEstimateCurledExtrusions", "object:0", Clock::time_point {} + 50ms}};
+    const WorkloadComparison idler  = only_workload(compare(run_of({ran("slice/idler", {finished(40ms), unfinished, finished(40ms)})}),
+                                                            run_of({ran("slice/idler", thrice(finished(50ms)))}), {}));
+    const StagePair          curled = pair_of(idler, "posEstimateCurledExtrusions");
+    REQUIRE(curled.time.has_value());
+    CHECK_THAT(curled.time->change, WithinAbs(0.25, 1e-12));
+    CHECK(curled.time->verdict == Verdict::Worse);
+}
+
+TEST_CASE("under verbose a comparison pairs each scope of a stage apart, and records that it did", "[OrcaBench][Compare]")
+{
+    IterationResult pass = iteration_of(200ms, {{"posSlice", 50ms}});
+    pass.timeline.push_back(span_of("posSlice", "object:1", 50ms, 30ms));
+    const Result   run = run_of({ran("slice/idler", thrice(pass))});
+    CompareOptions options;
+    options.verbose          = true;
+    const Comparison verbose = compare(run, run, options);
+    CHECK(verbose.verbose);
+    CHECK(only_workload(verbose).stages.size() == 2);
+    const Comparison merged = compare(run, run, {});
+    CHECK_FALSE(merged.verbose);
+    CHECK(only_workload(merged).stages.size() == 1);
+}
+
 TEST_CASE("a pair folds only when small in both runs and unchanged, so a stage that grew surfaces", "[OrcaBench][Compare]")
 {
     // posX is 0.5% of a's work and 1.25% of b's, posY stays under 1% in both, posZ doubles while small, and posW
@@ -258,6 +297,21 @@ TEST_CASE("the wall, summed work, unaccounted time and peak memory compare their
     CHECK_THAT(idler.peak_rss_bytes->change, WithinAbs(380.0 / 400 - 1, 1e-12));
 }
 
+TEST_CASE("a run's CPU left out below the floor is marked as such", "[OrcaBench][Compare]")
+{
+    IterationResult pass           = iteration_of(100ms, {{"posSlice", 50ms}});
+    pass.cpu                       = 100ms;
+    const Result b                 = run_of({ran("slice/idler", thrice(pass))});
+    Result       a                 = b;
+    a.machine.properties           = {{MachineProperty::cpu_time_step_ns, "15625000"}};
+    const WorkloadComparison idler = only_workload(compare(a, b, {}));
+    CHECK(idler.cpu_below_floor_a);
+    CHECK_FALSE(idler.cpu_a.has_value());
+    CHECK_FALSE(idler.cpu_below_floor_b);
+    REQUIRE(idler.cpu_b.has_value());
+    CHECK_THAT(*idler.cpu_b, WithinAbs(1.0, 1e-12));
+}
+
 TEST_CASE("the wall per million moves, per layer and per cm3 compare the work each run did", "[OrcaBench][Compare]")
 {
     WorkStats work_a;
@@ -283,12 +337,14 @@ TEST_CASE("the wall per million moves, per layer and per cm3 compare the work ea
     CHECK_FALSE(only_workload(compare(run(2000ms, 1, work_a), run(2100ms, 2, work_b), {})).per_layer.has_value());
 }
 
-TEST_CASE("the geometric mean covers the workloads compared with unchanged output, and says how many", "[OrcaBench][Compare]")
+TEST_CASE("the geometric mean covers the workloads compared with unchanged output and a wall in b, and says how many",
+          "[OrcaBench][Compare]")
 {
     const auto pass = [](Clock::duration wall) { return thrice(iteration_of(wall, {{"posInfill", wall / 2}})); };
     const Result a  = run_of({ran("slice/idler", pass(100ms)), ran("slice/cube", pass(100ms)), ran("slice/supports", pass(100ms), 1),
-                             ran("slice/benchy", pass(100ms))});
-    const Result b  = run_of({ran("slice/idler", pass(110ms)), ran("slice/cube", pass(90ms)), ran("slice/supports", pass(150ms), 2)});
+                             ran("slice/benchy", pass(100ms)), ran("slice/instant", pass(100ms))});
+    const Result b  = run_of({ran("slice/idler", pass(110ms)), ran("slice/cube", pass(90ms)), ran("slice/supports", pass(150ms), 2),
+                             ran("slice/instant", pass(0ms))});
     const Comparison comparison = compare(a, b, {});
     CHECK(comparison.geometric_mean_of == 2);
     REQUIRE(comparison.wall_geometric_mean.has_value());

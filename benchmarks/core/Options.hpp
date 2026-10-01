@@ -46,7 +46,7 @@ Options parse_options(const std::vector<std::string_view>& arguments);
 std::string usage();
 
 // Whether the console views color their output, where auto colors a terminal unless NO_COLOR holds
-// anything, as no-color.org asks.
-bool use_color(ColorChoice choice, bool terminal, const char* no_color);
+// anything, as no-color.org asks, or TERM is dumb.
+bool use_color(ColorChoice choice, bool terminal, const char* no_color, const char* term);
 
 }} // namespace Slic3r::Bench

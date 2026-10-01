@@ -5,7 +5,6 @@
 
 #include <chrono>
 #include <cstdint>
-#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <sstream>
@@ -405,10 +404,6 @@ TEST_CASE("a document is read from its file, and an error names the file", "[Orc
     const std::string path = std::string(TEST_DATA_DIR) + "/orcabench/result_v1.json";
     CHECK(read_document_file(path).workloads.size() == 3);
     CHECK_THROWS_WITH(read_document_file(path + ".missing"), "cannot read " + path + ".missing");
-
-    const std::filesystem::path unreadable = std::filesystem::temp_directory_path() / "orcabench_schema_9.json";
-    std::ofstream(unreadable) << edited(fixture(), "\"schema\": \"1.0\"", "\"schema\": \"9.0\"");
-    CHECK_THROWS_WITH(read_document_file(unreadable.string()),
-                      unreadable.string() + ": schema 9.0 cannot be read by this build, which reads 1.x");
-    std::filesystem::remove(unreadable);
+    const std::string newer = std::string(TEST_DATA_DIR) + "/orcabench/result_v9.json";
+    CHECK_THROWS_WITH(read_document_file(newer), newer + ": schema 9.0 cannot be read by this build, which reads 1.x");
 }
