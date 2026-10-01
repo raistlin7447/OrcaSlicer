@@ -600,8 +600,8 @@ TEST_CASE("a comparison lays out changed output, the walls, each workload's tabl
 {
     CHECK(compare_text(before(), after()) ==
           "orca_bench compare  quick  threads=20  1 warmup + 3 iterations  stages process,export\n"
-          "a  before.json  2026-09-30 09:14 UTC  a83e6b7b74        Clang 22.1.3  Release\n"
-          "b  after.json   2026-09-30 11:02 UTC  9f1c2d3e4a dirty  Clang 22.1.3  Release\n"
+          "a  2026-09-30 09:14 UTC  a83e6b7b74        Clang 22.1.3  Release  before.json\n"
+          "b  2026-09-30 11:02 UTC  9f1c2d3e4a dirty  Clang 22.1.3  Release  after.json\n"
           "   a flags  /O2 /Ob2 /DNDEBUG\n"
           "   b flags  /O2 /Ob2 /DNDEBUG /GL\n"
           "   BENCH-PC  Linux 6.8.0  13th Gen Intel(R) Core(TM) i5-13600K  20 cores\n"
@@ -835,7 +835,8 @@ TEST_CASE("the header shows both machines when they differ, and every build or m
     b.machine.host       = "BENCH-PC-2";
     a.machine.properties = {{MachineProperty::cpu_time_step_ns, "15625000"}};
     b.machine.properties = {{MachineProperty::cpu_time_step_ns, "100"}};
-    CHECK(compare_text(a, b).find("b  after.json   2026-09-30 11:02 UTC  9f1c2d3e4a dirty  Clang 22.1.3  Release (unoptimized)\n"
+    CHECK(compare_text(a, b).find("a  2026-09-30 09:14 UTC  a83e6b7b74        Clang 22.1.3  Release                before.json\n"
+                                  "b  2026-09-30 11:02 UTC  9f1c2d3e4a dirty  Clang 22.1.3  Release (unoptimized)  after.json\n"
                                   "   a flags  /O2 /Ob2 /DNDEBUG\n"
                                   "   b flags  /Od /Ob0\n"
                                   "   pgo  - -> on\n"

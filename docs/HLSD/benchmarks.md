@@ -292,10 +292,10 @@ judged.
 
 Output comes before time. A workload whose output hash or work stats differ measures different work,
 so the comparison lists every hash and stat that changed before any time, and words such a
-workload's changes longer or shorter, since slower means the same work cost more. Only there does it
-also compare the wall per million moves, per layer and per cm3, and the geometric mean of the wall
-covers only the workloads whose output did not change. A stage whose state changed, or that only one
-run has, is significant, and pairs fold into the other row only when small in both runs and
+workload's changes longer or shorter, since slower means the same work cost more. Only there does
+the view also show the wall per million moves, per layer and per cm3, and the geometric mean of the
+wall covers only the workloads whose output did not change. A stage whose state changed, or that
+only one run has, is significant, and pairs fold into the other row only when small in both runs and
 unchanged, so a stage that grew surfaces however small it was before.
 
 Each column of the view holds one unit at one precision, and the view is as wide as its columns, up

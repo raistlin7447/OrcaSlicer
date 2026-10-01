@@ -532,14 +532,17 @@ private:
               << "  threads=" << label(a.measurement, MeasurementKey::threads) << "  " << passes
               << "  stages " << label(a.measurement, MeasurementKey::stages) << "\n";
 
-        const auto revision = [](const BuildIdentity& build) { return build.revision + (build.dirty ? " dirty" : ""); };
-        const std::size_t labels    = std::max(m_view.label_a.size(), m_view.label_b.size());
-        const std::size_t revisions = std::max(revision(a.build).size(), revision(b.build).size());
-        const auto        run_line  = [&](const char* side, const Result& run, const std::string& name) {
-            const BuildIdentity& build = run.build;
-            m_out << side << "  " << padded(name, labels) << "  " << utc_minute(run.suite.started_at) << "  "
-                  << padded(revision(build), revisions) << "  " << build.compiler << " " << build.compiler_version << "  "
-                  << build.config << (unoptimized(build.flags) ? " " + paint("(unoptimized)", Paint::Worse) : "") << "\n";
+        const auto revision  = [](const BuildIdentity& build) { return build.revision + (build.dirty ? " dirty" : ""); };
+        const auto toolchain = [this](const BuildIdentity& build) {
+            return build.compiler + " " + build.compiler_version + "  " + build.config +
+                   (unoptimized(build.flags) ? " " + paint("(unoptimized)", Paint::Worse) : "");
+        };
+        const std::size_t revisions  = std::max(revision(a.build).size(), revision(b.build).size());
+        const std::size_t toolchains = std::max(shown_width(toolchain(a.build)), shown_width(toolchain(b.build)));
+        // The file comes last, where a long path wraps without moving the columns before it.
+        const auto run_line = [&](const char* side, const Result& run, const std::string& name) {
+            m_out << side << "  " << utc_minute(run.suite.started_at) << "  " << padded(revision(run.build), revisions) << "  "
+                  << padded(toolchain(run.build), toolchains) << "  " << name << "\n";
         };
         run_line("a", a, m_view.label_a);
         run_line("b", b, m_view.label_b);
