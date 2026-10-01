@@ -30,6 +30,9 @@ struct Options
 {
     bool                        help = false;
     bool                        list = false;
+    std::optional<std::string>  policy;
+    std::optional<std::string>  filter;
+    std::optional<std::string>  out;
     std::optional<CompareFiles> compare;
     bool                        allow_mismatch = false;
     ColorChoice                 color          = ColorChoice::Auto;

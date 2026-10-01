@@ -14,6 +14,29 @@ void validate(const CatalogEntry& entry)
         throw WorkloadError("the catalog entry name '" + entry.name + "' is empty or has a character outside printable ASCII");
 }
 
+bool matches(std::string_view pattern, std::string_view name)
+{
+    // On a mismatch the last * takes one more character, so the scan never backtracks further.
+    std::size_t p = 0, n = 0, star = std::string_view::npos, star_n = 0;
+    while (n < name.size()) {
+        if (p < pattern.size() && pattern[p] == '*') {
+            star   = p++;
+            star_n = n;
+        } else if (p < pattern.size() && pattern[p] == name[n]) {
+            ++p;
+            ++n;
+        } else if (star != std::string_view::npos) {
+            p = star + 1;
+            n = ++star_n;
+        } else {
+            return false;
+        }
+    }
+    while (p < pattern.size() && pattern[p] == '*')
+        ++p;
+    return p == pattern.size();
+}
+
 std::string listing(const std::vector<CatalogEntry>& catalog)
 {
     std::string lines;

@@ -1,13 +1,23 @@
+#include "core/Catalog.hpp"
 #include "core/Compare.hpp"
 #include "core/Document.hpp"
 #include "core/Host.hpp"
 #include "core/Options.hpp"
+#include "core/Policy.hpp"
 #include "core/Reporters.hpp"
+#include "core/Runner.hpp"
 #include "core/Workload.hpp"
+#include "slicer/Environment.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <exception>
+#include <fstream>
 #include <iostream>
+#include <iterator>
+#include <memory>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 using namespace Slic3r::Bench;
@@ -29,6 +39,42 @@ int compare_files(const Options& options)
     return comparison.changed_outputs > 0 ? 3 : 0;
 }
 
+// The catalog's workloads, or those the options' filter matches, throwing when it matches none.
+std::vector<CatalogEntry> selected(const Options& options)
+{
+    std::vector<CatalogEntry> catalog = read_catalog_dir(ORCABENCH_CATALOG_DIR);
+    if (!options.filter)
+        return catalog;
+    std::vector<CatalogEntry> matched;
+    std::copy_if(catalog.begin(), catalog.end(), std::back_inserter(matched),
+                 [&options](const CatalogEntry& entry) { return matches(*options.filter, entry.name); });
+    if (matched.empty())
+        throw std::runtime_error("no workload in the catalog matches '" + *options.filter + "'");
+    return matched;
+}
+
+// Runs the selected workloads under the options' policy, printing each as it finishes, writes the result
+// where the options ask, and returns 1 when a workload failed.
+int run_catalog(const Options& options)
+{
+    const Policy                    policy  = Policy::resolve(*options.policy, {}, hardware_threads());
+    const std::vector<CatalogEntry> catalog = selected(options);
+    ReportOptions                   report;
+    report.color = use_color(options.color, enable_terminal_escapes(), std::getenv("NO_COLOR"), std::getenv("TERM"));
+    const std::unique_ptr<Reporter> console = make_reporter("console", std::cout, report);
+    Progress                        progress(std::cerr, error_is_terminal());
+    SlicerEnvironment               environment(ORCABENCH_RESOURCES_DIR);
+    const RunEvents                 events = report_events(*console, &progress);
+    const Result                    result = run_suite(catalog, policy, WorkloadKinds::instance(), environment, host_reading, events);
+    if (options.out) {
+        std::ofstream file(*options.out, std::ios::binary);
+        file << write_document(result);
+        if (!file)
+            throw std::runtime_error("cannot write " + *options.out);
+    }
+    return count_of(result, Outcome::Failed) == 0 ? 0 : 1;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -43,14 +89,17 @@ int main(int argc, char** argv)
         if (options.compare)
             return compare_files(options);
         if (options.list) {
-            // No catalog file is read, so there is nothing to list.
-            const std::vector<CatalogEntry> catalog;
-            std::cout << listing(catalog);
+            std::cout << listing(selected(options));
             return 0;
         }
+        if (options.policy)
+            return run_catalog(options);
         std::cout << usage();
         return 0;
     } catch (const OptionsError& error) {
+        std::cerr << "orca_bench: " << error.what() << "\n" << usage();
+        return 2;
+    } catch (const PolicyError& error) {
         std::cerr << "orca_bench: " << error.what() << "\n" << usage();
         return 2;
     } catch (const CompareError& error) {

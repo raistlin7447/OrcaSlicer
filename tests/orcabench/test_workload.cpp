@@ -125,3 +125,22 @@ TEST_CASE("the listing names each entry on its own line", "[OrcaBench][Workload]
     CHECK(listing({entry_of("slice/cube", "slice"), entry_of("load/cube", "load")}) == "slice/cube\nload/cube\n");
     CHECK(listing({}).empty());
 }
+
+TEST_CASE("a pattern matches a whole workload name, where * stands for any text", "[OrcaBench][Workload]")
+{
+    const auto [pattern, name, matched] = GENERATE(table<std::string, std::string, bool>({
+        {"slice/3dbenchy/classic", "slice/3dbenchy/classic", true},
+        {"slice/3dbenchy", "slice/3dbenchy/classic", false},
+        {"slice/3dbenchy/*", "slice/3dbenchy/classic", true},
+        {"slice/*/classic", "slice/3dbenchy/classic", true},
+        {"slice/*/classic", "slice/3dbenchy/arachne", false},
+        {"*benchy*", "slice/3dbenchy/classic", true},
+        {"*a*a*", "slice/3dbenchy/arachne", true},
+        {"*a*a*a*", "slice/3dbenchy/arachne", false},
+        {"*", "slice/3dbenchy/classic", true},
+        {"slice/3dbenchy/classic*", "slice/3dbenchy/classic", true},
+        {"", "slice/3dbenchy/classic", false},
+    }));
+    CAPTURE(pattern, name);
+    CHECK(matches(pattern, name) == matched);
+}

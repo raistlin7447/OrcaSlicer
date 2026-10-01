@@ -1,0 +1,112 @@
+#include <catch2/catch_all.hpp>
+
+#include "core/Catalog.hpp"
+#include "slicer/Fixtures.hpp"
+
+#include "libslic3r/BoundingBox.hpp"
+#include "libslic3r/Utils.hpp"
+
+#include <set>
+#include <stdexcept>
+#include <string>
+
+using namespace Slic3r;
+using namespace Slic3r::Bench;
+using Catch::Matchers::EndsWith;
+using Catch::Matchers::WithinAbs;
+
+namespace {
+
+// The source tree's resources as resources_dir() for the scope's lifetime.
+class TreeResources
+{
+public:
+    TreeResources() : m_previous(resources_dir()) { set_resources_dir(ORCABENCH_RESOURCES_DIR); }
+    ~TreeResources() { set_resources_dir(m_previous); }
+
+    TreeResources(const TreeResources&)            = delete;
+    TreeResources& operator=(const TreeResources&) = delete;
+
+private:
+    const std::string m_previous;
+};
+
+} // namespace
+
+TEST_CASE("a procedural fixture is one object with one instance, centered on the bed", "[OrcaBench][Fixtures]")
+{
+    const std::string shape = GENERATE(as<std::string> {}, "smoke-cube", "peg-grid", "fine-sphere");
+    CAPTURE(shape);
+    const FixtureModel fixture = load_fixture("procedural:" + shape);
+    REQUIRE(fixture.model);
+    REQUIRE(fixture.model->objects.size() == 1);
+    CHECK(fixture.model->objects.front()->instances.size() == 1);
+    const BoundingBoxf3 box = fixture.model->bounding_box_exact();
+    CHECK_THAT(box.center().x(), WithinAbs(175., 1e-6));
+    CHECK_THAT(box.center().y(), WithinAbs(175., 1e-6));
+    CHECK_THAT(box.min.z(), WithinAbs(0., 1e-6));
+}
+
+TEST_CASE("the peg grid is a plate of pegs and the fine sphere a sphere of many triangles", "[OrcaBench][Fixtures]")
+{
+    const FixtureModel pegs = load_fixture("procedural:peg-grid");
+    REQUIRE(pegs.model);
+    const Vec3d plate = pegs.model->bounding_box_exact().size();
+    CHECK_THAT(plate.x(), WithinAbs(64., 1e-6));
+    CHECK_THAT(plate.y(), WithinAbs(64., 1e-6));
+    CHECK_THAT(plate.z(), WithinAbs(14., 1e-6));
+
+    const FixtureModel sphere = load_fixture("procedural:fine-sphere");
+    REQUIRE(sphere.model);
+    CHECK_THAT(sphere.model->bounding_box_exact().size().z(), WithinAbs(50., 1e-3));
+    CHECK(sphere.model->objects.front()->volumes.front()->mesh().facets_count() > 100000);
+}
+
+TEST_CASE("a handy fixture reads the model the app offers, and a missing one names the path it looked for", "[OrcaBench][Fixtures]")
+{
+    const TreeResources resources;
+    const FixtureModel  voron = load_fixture("handy:Voron_Design_Cube_v7.drc");
+    REQUIRE(voron.model);
+    CHECK_FALSE(voron.model->objects.empty());
+    CHECK(voron.unavailable.empty());
+
+    const FixtureModel missing = load_fixture("handy:missing.drc");
+    CHECK_FALSE(missing.model);
+    CHECK_THAT(missing.unavailable, EndsWith("missing.drc is missing"));
+}
+
+TEST_CASE("a fixture id that names no fixture is refused", "[OrcaBench][Fixtures]")
+{
+    const std::string id = GENERATE(as<std::string> {}, "smoke-cube", "procedural:sphere", "handy");
+    CAPTURE(id);
+    CHECK_THROWS_AS(load_fixture(id), std::invalid_argument);
+}
+
+TEST_CASE("the hermetic config sets the bed, the layer change G-code and no object labels, then the entry's keys", "[OrcaBench][Fixtures]")
+{
+    const DynamicPrintConfig config = hermetic_config({{"layer_height", "0.3"}});
+    CHECK(config.opt_serialize("printable_area") == "0x0,350x0,350x350,0x350");
+    CHECK(config.opt_string("layer_change_gcode") == "G92 E0");
+    CHECK_FALSE(config.opt_bool("gcode_label_objects"));
+    CHECK_THAT(config.opt_float("printable_height"), WithinAbs(350., 1e-9));
+    CHECK_THAT(config.opt_float("layer_height"), WithinAbs(0.3, 1e-9));
+    CHECK_THROWS(hermetic_config({{"no_such_key", "1"}}));
+}
+
+TEST_CASE("every fixture and config a slice in the catalog names loads", "[OrcaBench][Fixtures]")
+{
+    const TreeResources   resources;
+    std::set<std::string> loaded;
+    for (const CatalogEntry& entry : read_catalog_dir(ORCABENCH_CATALOG_DIR)) {
+        if (entry.kind != "slice")
+            continue;
+        CAPTURE(entry.name);
+        if (loaded.insert(entry.fixture).second) {
+            const FixtureModel fixture = load_fixture(entry.fixture);
+            CHECK(fixture.model);
+            CHECK(fixture.unavailable.empty());
+        }
+        CHECK_NOTHROW(hermetic_config(entry.config));
+    }
+    CHECK(loaded.size() == 8);
+}
