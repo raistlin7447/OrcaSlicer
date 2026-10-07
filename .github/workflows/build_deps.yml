@@ -178,6 +178,37 @@ jobs:
       #     name: OrcaSlicer_dep_ubuntu_${{ env.ubuntu-ver }}_${{ env.date }}
       #     path: ${{ github.workspace }}/deps/build/OrcaSlicer_dep_ubuntu_*.tar.gz
 
+  # clang-tidy for a pull request that changes deps/, which clang_tidy.yml leaves
+  # to this job. It runs once the deps are available, built here or already
+  # cached, under the same condition as build_orca. The key prefix picks the
+  # x86_64 Linux deps, the ones clang_tidy.yml restores; build_check_cache.yml
+  # notes that its format is relied on here.
+  clang_tidy:
+    name: clang-tidy
+    needs: [build_deps]
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && startsWith(inputs.cache-key, 'linux-clang-cache-') && (needs.build_deps.result == 'success' || (inputs.valid-cache == true && needs.build_deps.result == 'skipped')) }}
+    runs-on: ${{ inputs.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          lfs: 'false'
+          # The PR merge commit plus its first parent, the base it is diffed against.
+          fetch-depth: 2
+          # Enough to see whether this job checks the PR. The action checks out
+          # the rest when it does.
+          sparse-checkout: |
+            .github
+            deps
+          filter: blob:none
+
+      - name: Run clang-tidy
+        uses: ./.github/actions/clang-tidy
+        with:
+          deps-change: 'true'
+          cache-key: ${{ inputs.cache-key }}
+          apt-install: ${{ !vars.SELF_HOSTED }}
+
   build_orca:
     name: Build OrcaSlicer
     needs: [build_deps]

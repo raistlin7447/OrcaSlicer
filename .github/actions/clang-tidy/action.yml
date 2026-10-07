@@ -1,0 +1,119 @@
+name: 'clang-tidy'
+description: >
+  Runs clang-tidy, with the checks in .clang-tidy, over the C++ lines a pull
+  request changes. Needs a checkout of the PR merge commit with fetch-depth 2;
+  a sparse one of .github and deps is enough, since the action checks out the
+  rest when it has C++ to check. clang_tidy.yml runs it for a pull request that
+  leaves deps/ alone, and build_deps.yml for one that changes deps/, once Build
+  all has built the deps.
+inputs:
+  deps-change:
+    description: "'true' to check only a pull request that changes deps/, 'false' to check only one that does not"
+    required: true
+  cache-key:
+    description: 'Key of the Linux deps cache to restore'
+    required: true
+  restore-keys:
+    description: 'Prefixes to fall back to when no cache has the exact key'
+    default: ''
+  apt-install:
+    description: 'Install the build packages with apt first'
+    default: 'true'
+runs:
+  using: 'composite'
+  steps:
+    - name: Look for changed C++ files
+      id: changes
+      shell: bash
+      env:
+        DEPS_CHANGE: ${{ inputs.deps-change }}
+      # Each git call stands on its own line, so a git error fails the step
+      # instead of reading as "nothing changed". The diffs compare the two
+      # commits, which works on a sparse, blobless checkout.
+      run: |
+        deps=$(git diff --name-only --no-renames HEAD^1 HEAD -- deps)
+        cpp=$(git -c core.quotePath=false diff --name-only --no-renames HEAD^1 HEAD -- src tests)
+        if ! grep -qE '\.(cpp|cc|cxx|hpp|h|hxx)$' <<< "$cpp"; then
+          echo "No C++ changes under src/ or tests/."
+        elif [ -n "$deps" ] && [ "$DEPS_CHANGE" != true ]; then
+          msg="This pull request changes deps/, so clang-tidy runs in Build all instead, as the clang-tidy job of build_linux, once its deps are built. Wait for that job before merging."
+          echo "::notice::$msg"
+          echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+        elif [ -z "$deps" ] && [ "$DEPS_CHANGE" = true ]; then
+          echo "This pull request leaves deps/ alone, so the clang-tidy workflow checks it."
+        else
+          echo "run=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Check out the whole merge commit
+      if: steps.changes.outputs.run == 'true'
+      uses: actions/checkout@v7
+      with:
+        lfs: 'false'
+        # The PR merge commit plus its first parent, the base it is diffed against.
+        fetch-depth: 2
+
+    # The exact key goes first: a restore-keys prefix match on this PR's ref
+    # would otherwise win over the exact key on main.
+    - name: Restore cached deps
+      id: deps_cache
+      if: steps.changes.outputs.run == 'true'
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ github.workspace }}/deps/build/OrcaSlicer_dep
+        key: ${{ inputs.cache-key }}
+
+    - name: Fall back to an older deps cache
+      id: fallback
+      if: steps.changes.outputs.run == 'true' && steps.deps_cache.outputs.cache-hit != 'true' && inputs.restore-keys != ''
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ github.workspace }}/deps/build/OrcaSlicer_dep
+        key: ${{ inputs.cache-key }}
+        restore-keys: ${{ inputs.restore-keys }}
+
+    - name: Check the deps cache
+      if: steps.changes.outputs.run == 'true' && steps.deps_cache.outputs.cache-hit != 'true' && steps.fallback.outputs.cache-matched-key == ''
+      shell: bash
+      env:
+        KEY: ${{ inputs.cache-key }}
+      run: |
+        echo "::error::No Linux deps cache found for $KEY. Build all's build_linux Build Deps job saves it. If that job succeeded, its cache save failed (see its Post load cached deps step). Re-run Build all."
+        exit 1
+
+    - name: Apt-Install Dependencies
+      if: steps.changes.outputs.run == 'true' && inputs.apt-install == 'true'
+      uses: ./.github/actions/apt-install-deps
+
+    - name: Install clang-tidy
+      if: steps.changes.outputs.run == 'true'
+      shell: bash
+      run: |
+        python3 -m venv "$RUNNER_TEMP/clang-tidy"
+        "$RUNNER_TEMP/clang-tidy/bin/pip" install --quiet -r scripts/clang_tidy_requirements.txt
+
+    # DEP_BUILD_DIR is named outright: CMake would otherwise derive it from the build
+    # directory's name and look for the dependencies in deps/build-tidy.
+    - name: Configure without the precompiled header
+      if: steps.changes.outputs.run == 'true'
+      shell: bash
+      run: >
+        cmake -S . -B build-tidy -G Ninja
+        -DCMAKE_BUILD_TYPE=Release
+        -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+        -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+        -DSLIC3R_PCH=OFF -DORCA_TOOLS=ON -DBUILD_TESTS=ON
+        -DDEP_BUILD_DIR=${{ github.workspace }}/deps/build
+
+    # The one header the build generates rather than the configure.
+    - name: Generate git_commit_hash.h
+      if: steps.changes.outputs.run == 'true'
+      shell: bash
+      run: cmake --build build-tidy --target git_commit_hash_header
+
+    - name: Run clang-tidy on the changed lines
+      if: steps.changes.outputs.run == 'true'
+      shell: bash
+      run: >
+        python3 scripts/clang_tidy_diff.py -p build-tidy --base HEAD^1
+        --clang-tidy "$RUNNER_TEMP/clang-tidy/bin/clang-tidy" -j "$(nproc)"
