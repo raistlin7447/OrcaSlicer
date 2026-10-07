@@ -9,10 +9,9 @@ name: clang-tidy
 # paths filter leaves a required check pending forever. A PR with no C++
 # changes finishes after the first step.
 on:
-  pull_request:
+  push:
     branches:
-      - main
-      - release/*
+      - ci/clang-tidy-deps-wait-harness
 
 permissions:
   contents: read
@@ -20,7 +19,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: ${{ github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -67,7 +66,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           KEY: ${{ steps.deps_cache.outputs.cache-primary-key }}
           REFS: ${{ github.ref }} refs/heads/${{ github.base_ref }} refs/heads/${{ github.event.repository.default_branch }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_SHA: ${{ github.sha }}
           SELF_HOSTED: ${{ vars.SELF_HOSTED }}
         run: |
           retry="Re-run this check, or push again, once Build all's amd64 build_linux Build Deps job has succeeded."
@@ -77,7 +76,7 @@ jobs:
           fi
           echo "No Linux deps cache matches this deps/ yet ($KEY). Waiting up to 90 minutes for Build all to save it."
           # Every 3 minutes, because all runs in the repository share one GITHUB_TOKEN rate limit.
-          for _ in $(seq 30); do
+          for _ in $(seq ${{ contains(github.event.head_commit.message, '[short]') && 3 || 30 }}); do
             # Read the run first: it only completes after its deps job saved the cache.
             build=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/build_all.yml/runs?event=pull_request&head_sha=$HEAD_SHA" \
               --jq '.workflow_runs[0].status // ""' || true)
@@ -93,7 +92,7 @@ jobs:
               echo "::error::Build all has finished and the Linux deps cache ($KEY) is not there. Its amd64 build_linux Build Deps job failed, or the cache expired after 7 days unused. Re-run Build all, then this check, or push again."
               exit 1
             fi
-            sleep 180
+            sleep 30
           done
           echo "::error::Gave up after 90 minutes waiting for the Linux deps cache ($KEY). $retry"
           exit 1
@@ -106,35 +105,24 @@ jobs:
           key: ${{ steps.deps_cache.outputs.cache-primary-key }}
           fail-on-cache-miss: true
 
-      - name: Apt-Install Dependencies
-        if: steps.changes.outputs.cpp == 'true' && !vars.SELF_HOSTED
-        uses: ./.github/actions/apt-install-deps
-
-      - name: Install clang-tidy
+      - name: Show the restored deps
         if: steps.changes.outputs.cpp == 'true'
-        run: |
-          python3 -m venv "$RUNNER_TEMP/clang-tidy"
-          "$RUNNER_TEMP/clang-tidy/bin/pip" install --quiet -r scripts/clang_tidy_requirements.txt
+        run: cat deps/build/OrcaSlicer_dep/marker
 
-      # DEP_BUILD_DIR is named outright: CMake would otherwise derive it from the build
-      # directory's name and look for the dependencies in deps/build-tidy.
-      - name: Configure without the precompiled header
-        if: steps.changes.outputs.cpp == 'true'
-        run: >
-          cmake -S . -B build-tidy -G Ninja
-          -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
-          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-          -DSLIC3R_PCH=OFF -DORCA_TOOLS=ON -DBUILD_TESTS=ON
-          -DDEP_BUILD_DIR=${{ github.workspace }}/deps/build
-
-      # The one header the build generates rather than the configure.
-      - name: Generate git_commit_hash.h
-        if: steps.changes.outputs.cpp == 'true'
-        run: cmake --build build-tidy --target git_commit_hash_header
-
-      - name: Run clang-tidy on the changed lines
-        if: steps.changes.outputs.cpp == 'true'
-        run: >
-          python3 scripts/clang_tidy_diff.py -p build-tidy --base HEAD^1
-          --clang-tidy "$RUNNER_TEMP/clang-tidy/bin/clang-tidy" -j "$(nproc)"
+  fake_deps_build:
+    if: contains(github.event.head_commit.message, '[save]')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          lfs: 'false'
+      - id: key
+        run: echo "key=linux-clang-cache-orcaslicer_deps-build-${{ hashFiles('deps/**') }}" >> "$GITHUB_OUTPUT"
+      - run: |
+          sleep 90
+          mkdir -p deps/build/OrcaSlicer_dep
+          echo "fake deps saved by run ${{ github.run_id }}" > deps/build/OrcaSlicer_dep/marker
+      - uses: actions/cache/save@v6
+        with:
+          path: ${{ github.workspace }}/deps/build/OrcaSlicer_dep
+          key: ${{ steps.key.outputs.key }}
