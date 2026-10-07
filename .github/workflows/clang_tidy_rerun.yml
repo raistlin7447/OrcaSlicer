@@ -9,30 +9,48 @@ name: Re-run clang-tidy
 # name clang_tidy.yml, and its "Defer until Build all saves the deps cache" and
 # "Check the deps cache" steps.
 on:
-  workflow_run:
-    workflows: ["Build all"]
-    types:
-      - completed
+  push:
+    branches:
+      - ci/clang-tidy-fix7-harness
 
 permissions:
   actions: write
 
 jobs:
+  fake_deps_build:
+    if: contains(github.event.head_commit.message, '[rerun]') && !contains(github.event.head_commit.message, '[nosave]')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          lfs: 'false'
+      - id: key
+        run: echo "key=linux-clang-cache-orcaslicer_deps-build-${{ hashFiles('deps/**') }}" >> "$GITHUB_OUTPUT"
+      - run: |
+          mkdir -p deps/build/OrcaSlicer_dep
+          echo "fake deps saved by run ${{ github.run_id }}" > deps/build/OrcaSlicer_dep/marker
+      - uses: actions/cache/save@v6
+        with:
+          path: ${{ github.workspace }}/deps/build/OrcaSlicer_dep
+          key: ${{ steps.key.outputs.key }}
+
   rerun:
+    needs: fake_deps_build
     name: Re-run clang-tidy
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    if: ${{ github.event.workflow_run.event == 'pull_request' }}
+    if: ${{ !cancelled() && contains(github.event.head_commit.message, '[rerun]') }}
     steps:
       - name: Re-run clang-tidy runs that waited for the deps cache
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_SHA: ${{ vars.HARNESS_TARGET_SHA || github.event.before }}
           RUNS: repos/${{ github.repository }}/actions/workflows/clang_tidy.yml/runs
         run: |
+          sleep 60
           status=0
-          gh api -X GET "$RUNS" -f event=pull_request -f head_sha="$HEAD_SHA" \
+          gh api -X GET "$RUNS" -f event=push -f head_sha="$HEAD_SHA" \
             --jq '.workflow_runs[] | select(.status == "completed") | [.id, .head_branch, .head_repository.full_name, .created_at] | @tsv' > runs.tsv
           # gh reads stdin, so the list comes in on descriptor 3.
           while IFS=$'\t' read -r id branch repo created <&3; do
@@ -45,7 +63,7 @@ jobs:
             fi
             # A re-run joins clang_tidy.yml's concurrency group and would cancel a
             # newer run for the same pull request.
-            newer=$(gh api -X GET "$RUNS" -f event=pull_request -f branch="$branch" -f created=">=$created" -f per_page=100 \
+            newer=$(gh api -X GET "$RUNS" -f event=push -f branch="$branch" -f created=">=$created" -f per_page=100 \
               --jq "[.workflow_runs[] | select(.head_repository.full_name == \"$repo\" and .id != $id)] | length")
             if [ "$newer" != 0 ]; then
               echo "Run $id has a newer clang-tidy run for $repo:$branch, so it is left alone."

@@ -9,10 +9,11 @@ name: clang-tidy
 # paths filter leaves a required check pending forever. A PR with no C++
 # changes skips the clang-tidy job instead, which passes the check.
 on:
-  pull_request:
+  push:
     branches:
-      - main
-      - release/*
+      - ci/clang-tidy-fix7-harness
+    paths:
+      - 'src/**'
 
 permissions:
   contents: read
@@ -59,6 +60,13 @@ jobs:
             echo "No C++ changes under src/ or tests/."
           fi
 
+      - name: Slow down for the cancel test
+        if: contains(github.event.head_commit.message, '[slow]')
+        run: sleep 90
+
+      - name: Show what the sparse checkout left on disk
+        run: ls; git ls-files -t | grep -c '^S' || true
+
       - name: Look up the deps cache
         id: deps_cache
         if: steps.changes.outputs.cpp == 'true'
@@ -75,7 +83,7 @@ jobs:
         if: steps.changes.outputs.cpp == 'true' && steps.deps_cache.outputs.cache-hit != 'true' && github.run_attempt == 1
         env:
           GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
           run=$(gh api -X GET "repos/$GITHUB_REPOSITORY/actions/workflows/build_all.yml/runs" -f event=pull_request \
             -f head_sha="$HEAD_SHA" --jq '.workflow_runs[0] | "\(.status) \(.conclusion)"')
@@ -136,31 +144,5 @@ jobs:
           echo "::error::No Linux deps cache matches this deps/ ($KEY). Build all saves it in the x86_64 build_linux / Build Deps job. If Build all has finished, that job failed or did not save the cache: re-run Build all, and this check re-runs after it."
           exit 1
 
-      - name: Apt-Install Dependencies
-        if: ${{ !vars.SELF_HOSTED }}
-        uses: ./.github/actions/apt-install-deps
-
-      - name: Install clang-tidy
-        run: |
-          python3 -m venv "$RUNNER_TEMP/clang-tidy"
-          "$RUNNER_TEMP/clang-tidy/bin/pip" install --quiet -r scripts/clang_tidy_requirements.txt
-
-      # DEP_BUILD_DIR is named outright: CMake would otherwise derive it from the build
-      # directory's name and look for the dependencies in deps/build-tidy.
-      - name: Configure without the precompiled header
-        run: >
-          cmake -S . -B build-tidy -G Ninja
-          -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
-          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-          -DSLIC3R_PCH=OFF -DORCA_TOOLS=ON -DBUILD_TESTS=ON
-          -DDEP_BUILD_DIR=${{ github.workspace }}/deps/build
-
-      # The one header the build generates rather than the configure.
-      - name: Generate git_commit_hash.h
-        run: cmake --build build-tidy --target git_commit_hash_header
-
-      - name: Run clang-tidy on the changed lines
-        run: >
-          python3 scripts/clang_tidy_diff.py -p build-tidy --base HEAD^1
-          --clang-tidy "$RUNNER_TEMP/clang-tidy/bin/clang-tidy" -j "$(nproc)"
+      - name: Show the restored deps
+        run: cat deps/build/OrcaSlicer_dep/marker
