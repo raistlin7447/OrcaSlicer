@@ -9,16 +9,15 @@ name: clang-tidy
 # paths filter leaves a required check pending forever. A PR with no C++
 # changes finishes after the first step.
 on:
-  pull_request:
+  push:
     branches:
-      - main
-      - release/*
+      - ci/clang-tidy-rerun-harness
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: ${{ github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -66,35 +65,6 @@ jobs:
           echo "::error::No Linux deps cache matches this deps/ yet ($KEY). The build_linux (ubuntu-24.04) / Build Deps job in Build all saves it, and this check re-runs by itself when Build all finishes. If it fails here again after that, the deps job failed or did not save the cache."
           exit 1
 
-      - name: Apt-Install Dependencies
-        if: steps.changes.outputs.cpp == 'true' && !vars.SELF_HOSTED
-        uses: ./.github/actions/apt-install-deps
-
-      - name: Install clang-tidy
+      - name: Show the restored deps
         if: steps.changes.outputs.cpp == 'true'
-        run: |
-          python3 -m venv "$RUNNER_TEMP/clang-tidy"
-          "$RUNNER_TEMP/clang-tidy/bin/pip" install --quiet -r scripts/clang_tidy_requirements.txt
-
-      # DEP_BUILD_DIR is named outright: CMake would otherwise derive it from the build
-      # directory's name and look for the dependencies in deps/build-tidy.
-      - name: Configure without the precompiled header
-        if: steps.changes.outputs.cpp == 'true'
-        run: >
-          cmake -S . -B build-tidy -G Ninja
-          -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
-          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-          -DSLIC3R_PCH=OFF -DORCA_TOOLS=ON -DBUILD_TESTS=ON
-          -DDEP_BUILD_DIR=${{ github.workspace }}/deps/build
-
-      # The one header the build generates rather than the configure.
-      - name: Generate git_commit_hash.h
-        if: steps.changes.outputs.cpp == 'true'
-        run: cmake --build build-tidy --target git_commit_hash_header
-
-      - name: Run clang-tidy on the changed lines
-        if: steps.changes.outputs.cpp == 'true'
-        run: >
-          python3 scripts/clang_tidy_diff.py -p build-tidy --base HEAD^1
-          --clang-tidy "$RUNNER_TEMP/clang-tidy/bin/clang-tidy" -j "$(nproc)"
+        run: cat deps/build/OrcaSlicer_dep/marker

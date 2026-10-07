@@ -7,28 +7,45 @@ name: Re-run clang-tidy
 # The workflow name below must match the 'name' field in build_all.yml, and the
 # step name must match the step in clang_tidy.yml.
 on:
-  workflow_run:
-    workflows: ["Build all"]
-    types:
-      - completed
+  push:
+    branches:
+      - ci/clang-tidy-rerun-harness
 
 permissions:
   actions: write
 
 jobs:
+  fake_deps_build:
+    runs-on: ubuntu-24.04
+    if: contains(github.event.head_commit.message, '[rerun]')
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          lfs: 'false'
+      - id: key
+        run: echo "key=linux-clang-cache-orcaslicer_deps-build-${{ hashFiles('deps/**') }}" >> "$GITHUB_OUTPUT"
+      - run: |
+          mkdir -p deps/build/OrcaSlicer_dep
+          echo "fake deps saved by run ${{ github.run_id }}" > deps/build/OrcaSlicer_dep/marker
+      - uses: actions/cache/save@v6
+        with:
+          path: ${{ github.workspace }}/deps/build/OrcaSlicer_dep
+          key: ${{ steps.key.outputs.key }}
+
   rerun:
+    needs: fake_deps_build
     name: Re-run clang-tidy
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    if: ${{ github.event.workflow_run.event == 'pull_request' }}
+    if: contains(github.event.head_commit.message, '[rerun]')
     steps:
       - name: Re-run clang-tidy runs that had no deps cache
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_SHA: ${{ github.event.before }}
         run: |
-          runs=$(gh api "repos/$GH_REPO/actions/workflows/clang_tidy.yml/runs?event=pull_request&head_sha=$HEAD_SHA" \
+          runs=$(gh api "repos/$GH_REPO/actions/workflows/clang_tidy.yml/runs?event=push&head_sha=$HEAD_SHA" \
             --jq '.workflow_runs[] | select(.conclusion == "failure") | .id')
           for id in $runs; do
             if gh api "repos/$GH_REPO/actions/runs/$id/jobs" \
