@@ -1,0 +1,58 @@
+name: Re-run clang-tidy
+
+# clang_tidy.yml skips clang-tidy until Build all has saved the Linux deps cache
+# for the pull request's deps/. Once Build all finishes, this re-runs those
+# deferred runs. It runs no code from the pull request.
+#
+# It depends on three names: the 'name' field of build_all.yml below, the file
+# name clang_tidy.yml, and the "Defer until Build all saves the deps cache" step
+# in it.
+on:
+  workflow_run:
+    workflows: ["Build all"]
+    types:
+      - completed
+
+permissions:
+  actions: write
+
+jobs:
+  rerun:
+    name: Re-run clang-tidy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # A Build all run is cancelled when the PR gets a new push, and the run for
+    # the new push re-runs clang-tidy for that commit.
+    if: ${{ github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion != 'cancelled' }}
+    steps:
+      - name: Re-run deferred clang-tidy runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUNS: repos/${{ github.repository }}/actions/workflows/clang_tidy.yml/runs
+        run: |
+          status=0
+          gh api -X GET "$RUNS" -f event=pull_request -f head_sha="$HEAD_SHA" \
+            --jq '.workflow_runs[] | select(.status == "completed") | [.id, .head_branch, .head_repository.full_name] | @tsv' > runs.tsv
+          # gh reads stdin, so the list comes in on descriptor 3.
+          while IFS=$'\t' read -r id branch repo <&3; do
+            deferred=$(gh api "repos/$GH_REPO/actions/runs/$id/jobs" \
+              --jq 'any(.jobs[].steps[]; .name == "Defer until Build all saves the deps cache" and .conclusion == "success")')
+            if [ "$deferred" != true ]; then
+              echo "Run $id was not deferred."
+              continue
+            fi
+            # A re-run joins clang_tidy.yml's concurrency group and would cancel a
+            # newer run for the same pull request.
+            newest=$(gh api -X GET "$RUNS" -f event=pull_request -f branch="$branch" \
+              --jq "[.workflow_runs[] | select(.head_repository.full_name == \"$repo\")][0].id")
+            if [ "$newest" != "$id" ]; then
+              echo "Run $id is not the newest clang-tidy run for $repo:$branch ($newest), so it is left alone."
+              continue
+            fi
+            echo "Re-running clang-tidy run $id."
+            gh api --silent -X POST "repos/$GH_REPO/actions/runs/$id/rerun" || status=1
+          done 3< runs.tsv
+          echo "Checked $(wc -l < runs.tsv) clang-tidy run(s) for $HEAD_SHA."
+          exit $status
