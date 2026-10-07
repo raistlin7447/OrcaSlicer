@@ -1,0 +1,14 @@
+name: harness Build all
+on:
+  push:
+    branches:
+      - ci/clang-tidy-split-harness
+jobs:
+  build_deps:
+    name: build_linux (ubuntu-24.04)
+    uses: ./.github/workflows/build_deps.yml
+    with:
+      cache-key: linux-clang-cache-orcaslicer_deps-build-cab8a850f091d8e963b813889ed54100326875a2f9061fa1a7a8c20cb326d243
+      cache-path: ${{ github.workspace }}/deps/build/OrcaSlicer_dep
+      valid-cache: true
+      os: ubuntu-24.04

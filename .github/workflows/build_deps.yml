@@ -186,7 +186,7 @@ jobs:
   clang_tidy:
     name: clang-tidy
     needs: [build_deps]
-    if: ${{ !cancelled() && github.event_name == 'pull_request' && startsWith(inputs.cache-key, 'linux-clang-cache-') && (needs.build_deps.result == 'success' || (inputs.valid-cache == true && needs.build_deps.result == 'skipped')) }}
+    if: ${{ !cancelled() && startsWith(inputs.cache-key, 'linux-clang-cache-') && (needs.build_deps.result == 'success' || (inputs.valid-cache == true && needs.build_deps.result == 'skipped')) }}
     runs-on: ${{ inputs.os }}
     steps:
       - name: Checkout
@@ -212,7 +212,7 @@ jobs:
   build_orca:
     name: Build OrcaSlicer
     needs: [build_deps]
-    if: ${{ !cancelled() && !inputs.build-deps-only && (inputs.force-build || (inputs.valid-cache == true && needs.build_deps.result == 'skipped') || (inputs.valid-cache != true && success())) }}
+    if: ${{ false && !cancelled() && !inputs.build-deps-only && (inputs.force-build || (inputs.valid-cache == true && needs.build_deps.result == 'skipped') || (inputs.valid-cache != true && success())) }}
     uses: ./.github/workflows/build_orca.yml
     with:
       cache-key: ${{ inputs.cache-key }}
