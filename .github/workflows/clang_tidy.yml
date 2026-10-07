@@ -16,6 +16,8 @@ on:
 
 permissions:
   contents: read
+  # Waiting for the deps cache reads the cache and workflow run APIs.
+  actions: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -44,15 +46,64 @@ jobs:
             echo "No C++ changes under src/ or tests/."
           fi
 
-      # Parsing needs the dependency headers, not a build of this PR's deps/, so
-      # a PR that changes deps/ falls back to the newest cache main has.
+      # Only the cache built from this deps/ will do: any other one has the wrong
+      # dependency headers. Build all's amd64 build_linux Build Deps job saves it,
+      # on main, or on this PR when main does not have it yet. There are no
+      # restore-keys, because a prefix match on this PR's ref would win over the
+      # exact key on main.
       - name: Restore cached deps
+        id: deps_cache
         if: steps.changes.outputs.cpp == 'true'
         uses: actions/cache/restore@v6
         with:
           path: ${{ github.workspace }}/deps/build/OrcaSlicer_dep
           key: linux-clang-cache-orcaslicer_deps-build-${{ hashFiles('deps/**') }}
-          restore-keys: linux-clang-cache-orcaslicer_deps-build-
+
+      # Waiting holds the runner, and a self-hosted server may be the one that has
+      # to build the deps, so there the check fails at once.
+      - name: Wait for Build all to save the deps cache
+        if: steps.changes.outputs.cpp == 'true' && steps.deps_cache.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEY: ${{ steps.deps_cache.outputs.cache-primary-key }}
+          REFS: ${{ github.ref }} refs/heads/${{ github.base_ref }} refs/heads/${{ github.event.repository.default_branch }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          SELF_HOSTED: ${{ vars.SELF_HOSTED }}
+        run: |
+          retry="Re-run this check, or push again, once Build all's amd64 build_linux Build Deps job has succeeded."
+          if [ -n "$SELF_HOSTED" ]; then
+            echo "::error::No Linux deps cache matches this deps/ ($KEY). $retry"
+            exit 1
+          fi
+          echo "No Linux deps cache matches this deps/ yet ($KEY). Waiting up to 90 minutes for Build all to save it."
+          # Every 3 minutes, because all runs in the repository share one GITHUB_TOKEN rate limit.
+          for _ in $(seq 30); do
+            # Read the run first: it only completes after its deps job saved the cache.
+            build=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/build_all.yml/runs?event=pull_request&head_sha=$HEAD_SHA" \
+              --jq '.workflow_runs[0].status // ""' || true)
+            found=$(gh api "repos/$GITHUB_REPOSITORY/actions/caches?key=$KEY" \
+              --jq ".actions_caches[] | select(.key == \"$KEY\") | .ref" || true)
+            for ref in $REFS; do
+              if grep -qxF "$ref" <<< "$found"; then
+                echo "Found it on $ref."
+                exit 0
+              fi
+            done
+            if [ "$build" = completed ]; then
+              echo "::error::Build all has finished and the Linux deps cache ($KEY) is not there. Its amd64 build_linux Build Deps job failed, or the cache expired after 7 days unused. Re-run Build all, then this check, or push again."
+              exit 1
+            fi
+            sleep 180
+          done
+          echo "::error::Gave up after 90 minutes waiting for the Linux deps cache ($KEY). $retry"
+          exit 1
+
+      - name: Restore the deps cache Build all saved
+        if: steps.changes.outputs.cpp == 'true' && steps.deps_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ github.workspace }}/deps/build/OrcaSlicer_dep
+          key: ${{ steps.deps_cache.outputs.cache-primary-key }}
           fail-on-cache-miss: true
 
       - name: Apt-Install Dependencies
