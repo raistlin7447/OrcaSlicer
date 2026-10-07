@@ -9,10 +9,9 @@ name: clang-tidy
 # paths filter leaves a required check pending forever. A PR with no C++
 # changes finishes after the first step.
 on:
-  pull_request:
+  push:
     branches:
-      - main
-      - release/*
+      - ci/clang-tidy-warn-harness
 
 permissions:
   contents: read

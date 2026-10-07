@@ -1,3 +1,4 @@
+// warn harness
 #include "Point.hpp"
 #include "Exception.hpp"
 #include "Line.hpp"
