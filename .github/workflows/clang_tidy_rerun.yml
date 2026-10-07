@@ -43,10 +43,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.before }}
+          HEAD_SHA: b64262e25eb8bb3aa19f75e082bebbc1748f2dba
         run: |
           runs=$(gh api "repos/$GH_REPO/actions/workflows/clang_tidy.yml/runs?event=push&head_sha=$HEAD_SHA" \
             --jq '.workflow_runs[] | select(.conclusion == "failure") | .id')
+          echo "Failed clang-tidy runs for $HEAD_SHA: ${runs:-none}"
+          gh api "repos/$GH_REPO/actions/workflows/clang_tidy.yml/runs?head_sha=$HEAD_SHA" --jq '.workflow_runs[] | [.id,.event,.status,.conclusion] | @tsv' || echo "list failed"
           for id in $runs; do
             if gh api "repos/$GH_REPO/actions/runs/$id/jobs" \
                 --jq '.jobs[].steps[] | select(.name == "Check the deps cache" and .conclusion == "failure") | .name' | grep -q .; then
