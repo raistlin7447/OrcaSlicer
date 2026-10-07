@@ -44,16 +44,27 @@ jobs:
             echo "No C++ changes under src/ or tests/."
           fi
 
-      # Parsing needs the dependency headers, not a build of this PR's deps/, so
-      # a PR that changes deps/ falls back to the newest cache main has.
+      # Only the cache built from this deps/ has the right dependency headers, so
+      # there are no restore-keys. A prefix match on this PR's ref would also win
+      # over the exact key on main. Build all's build_linux (ubuntu-24.04) Build
+      # Deps job saves the cache, and clang_tidy_rerun.yml re-runs this check when
+      # Build all finishes.
       - name: Restore cached deps
+        id: deps_cache
         if: steps.changes.outputs.cpp == 'true'
         uses: actions/cache/restore@v6
         with:
           path: ${{ github.workspace }}/deps/build/OrcaSlicer_dep
           key: linux-clang-cache-orcaslicer_deps-build-${{ hashFiles('deps/**') }}
-          restore-keys: linux-clang-cache-orcaslicer_deps-build-
-          fail-on-cache-miss: true
+
+      # clang_tidy_rerun.yml finds a run to re-run by this step's name.
+      - name: Check the deps cache
+        if: steps.changes.outputs.cpp == 'true' && steps.deps_cache.outputs.cache-hit != 'true'
+        env:
+          KEY: ${{ steps.deps_cache.outputs.cache-primary-key }}
+        run: |
+          echo "::error::No Linux deps cache matches this deps/ yet ($KEY). The build_linux (ubuntu-24.04) / Build Deps job in Build all saves it, and this check re-runs by itself when Build all finishes. If it fails here again after that, the deps job failed or did not save the cache."
+          exit 1
 
       - name: Apt-Install Dependencies
         if: steps.changes.outputs.cpp == 'true' && !vars.SELF_HOSTED
