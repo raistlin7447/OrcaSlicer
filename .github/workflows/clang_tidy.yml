@@ -45,8 +45,11 @@ jobs:
           fi
 
       # Parsing needs the dependency headers, not a build of this PR's deps/, so
-      # a PR that changes deps/ falls back to the newest cache main has.
+      # until Build all has saved the cache for this deps/ (a PR that changes
+      # deps/, or main's new deps/ still building), this falls back to an older
+      # cache.
       - name: Restore cached deps
+        id: deps_cache
         if: steps.changes.outputs.cpp == 'true'
         uses: actions/cache/restore@v6
         with:
@@ -54,6 +57,16 @@ jobs:
           key: linux-clang-cache-orcaslicer_deps-build-${{ hashFiles('deps/**') }}
           restore-keys: linux-clang-cache-orcaslicer_deps-build-
           fail-on-cache-miss: true
+
+      # cache-hit is 'true' only for the exact key, not for a restore-keys match.
+      - name: Warn about older deps
+        if: steps.changes.outputs.cpp == 'true' && steps.deps_cache.outputs.cache-hit != 'true'
+        env:
+          MATCHED_KEY: ${{ steps.deps_cache.outputs.cache-matched-key }}
+        run: |
+          msg="No deps cache matches this deps/ yet, so clang-tidy parses against an older one ($MATCHED_KEY). Errors from dependency headers may be false, and new dependency headers are not checked. Re-run this check, or push again, after the Linux Build Deps job in Build all has finished."
+          echo "::warning::$msg"
+          echo "$msg" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Apt-Install Dependencies
         if: steps.changes.outputs.cpp == 'true' && !vars.SELF_HOSTED
