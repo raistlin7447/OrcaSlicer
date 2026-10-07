@@ -45,7 +45,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ vars.HARNESS_TARGET_SHA || github.event.before }}
+          HEAD_SHA: 9bfe1059fa62f17cb9bd1bb6dea93b24d1afaad6
           RUNS: repos/${{ github.repository }}/actions/workflows/clang_tidy.yml/runs
         run: |
           sleep 60
