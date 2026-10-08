@@ -99,6 +99,18 @@ private:
     bool                      m_refuse;
 };
 
+// A span `length` long that starts `at` after the epoch.
+inline StageSpan span_of(std::string stage, std::string scope, Clock::duration at, Clock::duration length, Metrics metrics = {})
+{
+    StageSpan span;
+    span.stage      = std::move(stage);
+    span.scope      = std::move(scope);
+    span.started_at = Clock::time_point {} + at;
+    span.done_at    = span.started_at + length;
+    span.metrics    = std::move(metrics);
+    return span;
+}
+
 // A process whose memory a test sets and whose CPU time runs at `rate` times the clock, counting the
 // reads so a test can wait for the sampler.
 struct ScriptedProcess

@@ -219,6 +219,28 @@ reader also refuses an integer that is fractional or too big for its field and a
 past the largest time the clock can hold. Both throw `DocumentError`, and the reader converts the
 parser's own exceptions to it, so no caller needs nlohmann to catch them.
 
+## The stage table
+
+`Summary.cpp` turns a workload's iterations into rows of stages and totals. A stage's row sums its
+spans across objects within each iteration, then takes the mean, the minimum and the coefficient of
+variation over the iterations that have a span of it, since one in which it never finished recorded
+none of its time. Its share is its span time over summed work, the sum of the rows, both over all
+the iterations. In verbose mode each scope gets its own row. The wall envelope is the mean iteration
+wall time, and unaccounted is the mean time no span covers, so objects slicing side by side can take
+summed work past the wall envelope but cannot make unaccounted negative. Each row carries its
+stage's state, so the four stay apart.
+
+`collapse()` folds the rows under 1% of summed work into one other row, which counts the stages that
+never ran. A row whose stage started without finishing at least once never folds, even when it also
+ran, since the time it hides lands in unaccounted. A row whose CV exceeds the 3% significance bar is
+noisy, since a change that size there cannot be told from noise.
+
+Each row also carries its sampled CPU and peak memory, and is marked shared when its spans
+overlapped another row's, since its readings then include that work. A CPU figure is left out when
+the worst-case rounding of its readings exceeds a tenth of the CPU time it shows. That rounding is
+the CPU time step the result's machine recorded, once per pair of readings for each of the run's
+threads and for the sampler's, so CPU from a machine that recorded no step is never left out.
+
 ## Tests
 
 `tests/data/orcabench/result_v1.json` is written by hand from the schema and is never regenerated

@@ -10,6 +10,7 @@ add_executable(${_TEST_NAME}_tests
     test_result.cpp
     test_runner.cpp
     test_sampler.cpp
+    test_summary.cpp
     test_workload.cpp
     )
 
