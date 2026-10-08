@@ -35,24 +35,6 @@ struct Tally
 
 double nanoseconds(Clock::duration duration) { return std::chrono::duration<double, std::nano>(duration).count(); }
 
-// The time any span covers, counting time that spans share once.
-Clock::duration covered(const Timeline& timeline)
-{
-    std::vector<std::pair<Clock::time_point, Clock::time_point>> spans;
-    for (const StageSpan& span : timeline)
-        spans.emplace_back(span.started_at, span.done_at);
-    std::sort(spans.begin(), spans.end());
-    Clock::duration   total {};
-    Clock::time_point reached = Clock::time_point::min();
-    for (const auto& [started_at, done_at] : spans) {
-        const Clock::time_point from = std::max(started_at, reached);
-        if (done_at > from)
-            total += done_at - from;
-        reached = std::max(reached, done_at);
-    }
-    return total;
-}
-
 // Whether a CPU time from this many pairs of readings could be off by more than cpu_error_limit of
 // itself, given that each of the run's threads and the sampler's can round by a step per pair.
 bool below_floor(const Result& header, std::size_t pairs, double cpu_ns)
@@ -70,6 +52,39 @@ bool below_floor(const Result& header, std::size_t pairs, double cpu_ns)
 }
 
 } // namespace
+
+Spread spread_of(const std::vector<double>& values)
+{
+    Spread spread;
+    if (values.empty())
+        return spread;
+    spread.min  = *std::min_element(values.begin(), values.end());
+    spread.mean = std::accumulate(values.begin(), values.end(), 0.0) / double(values.size());
+    if (values.size() > 1 && spread.mean > 0) {
+        double squares = 0.0;
+        for (const double value : values)
+            squares += (value - spread.mean) * (value - spread.mean);
+        spread.cv = std::sqrt(squares / double(values.size() - 1)) / spread.mean;
+    }
+    return spread;
+}
+
+Clock::duration covered(const Timeline& timeline)
+{
+    std::vector<std::pair<Clock::time_point, Clock::time_point>> spans;
+    for (const StageSpan& span : timeline)
+        spans.emplace_back(span.started_at, span.done_at);
+    std::sort(spans.begin(), spans.end());
+    Clock::duration   total {};
+    Clock::time_point reached = Clock::time_point::min();
+    for (const auto& [started_at, done_at] : spans) {
+        const Clock::time_point from = std::max(started_at, reached);
+        if (done_at > from)
+            total += done_at - from;
+        reached = std::max(reached, done_at);
+    }
+    return total;
+}
 
 std::chrono::nanoseconds recorded_cpu_time_step(const MachineIdentity& machine)
 {
@@ -180,21 +195,18 @@ WorkloadSummary summarize(const WorkloadResult& workload, const Result& header, 
             continue;
         }
         row.state = tally.instant ? StageState::Instant : StageState::Ran;
-        std::vector<Clock::duration> lengths;
-        for (const std::optional<Clock::duration>& length : tally.per_iteration)
-            if (length)
-                lengths.push_back(*length);
-        const Clock::duration total = std::accumulate(lengths.begin(), lengths.end(), Clock::duration::zero());
-        row.mean                    = Millis(total) / double(lengths.size());
-        row.min                     = *std::min_element(lengths.begin(), lengths.end());
-        if (lengths.size() > 1 && row.mean.count() > 0) {
-            double squares = 0.0;
-            for (const Clock::duration length : lengths) {
-                const double deviation = (Millis(length) - row.mean).count();
-                squares += deviation * deviation;
-            }
-            row.cv = std::sqrt(squares / double(lengths.size() - 1)) / row.mean.count();
+        Clock::duration     total {};
+        std::vector<double> times;
+        for (const std::optional<Clock::duration>& length : tally.per_iteration) {
+            if (!length)
+                continue;
+            total += *length;
+            times.push_back(Millis(*length).count());
         }
+        const Spread spread = spread_of(times);
+        row.mean            = Millis(spread.mean);
+        row.min             = Millis(spread.min);
+        row.cv              = spread.cv;
         if (summary.summed_work.count() > 0)
             row.share = Millis(total) / double(count) / summary.summed_work;
         if (tally.windows > 0) {
@@ -210,12 +222,14 @@ WorkloadSummary summarize(const WorkloadResult& workload, const Result& header, 
     return summary;
 }
 
+bool folds(const StageRow& row, double below) { return !row.unfinished && row.share < below; }
+
 std::optional<OtherRow> collapse(std::vector<StageRow>& rows, double below)
 {
-    const auto folds = [below](const StageRow& row) { return !row.unfinished && row.share < below; };
-    OtherRow other;
+    const auto folded = [below](const StageRow& row) { return folds(row, below); };
+    OtherRow   other;
     for (const StageRow& row : rows) {
-        if (!folds(row))
+        if (!folded(row))
             continue;
         ++other.stages;
         if (row.state == StageState::NotRun)
@@ -223,7 +237,7 @@ std::optional<OtherRow> collapse(std::vector<StageRow>& rows, double below)
         other.mean += row.mean;
         other.share += row.share;
     }
-    rows.erase(std::remove_if(rows.begin(), rows.end(), folds), rows.end());
+    rows.erase(std::remove_if(rows.begin(), rows.end(), folded), rows.end());
     if (other.stages == 0)
         return std::nullopt;
     return other;
