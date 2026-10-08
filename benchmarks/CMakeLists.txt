@@ -66,7 +66,9 @@ set_property(TARGET orcabench_core PROPERTY FOLDER "benchmarks")
 file(GLOB _orcabench_kinds CONFIGURE_DEPENDS kinds/*.cpp)
 add_library(orcabench_slicer OBJECT
     slicer/Environment.cpp
+    slicer/Fixtures.cpp
     slicer/Nanosvg.cpp
+    slicer/Output.cpp
     ${_orcabench_kinds}
     )
 target_link_libraries(orcabench_slicer PUBLIC orcabench_core libslic3r)

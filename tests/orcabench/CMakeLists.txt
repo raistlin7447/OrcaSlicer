@@ -33,6 +33,8 @@ orcaslicer_discover_tests(${_TEST_NAME}_tests)
 # The tests that slice, apart so the suite above builds without libslic3r and runs in about a second.
 add_executable(${_TEST_NAME}_slicer_tests
     test_environment.cpp
+    test_fixtures.cpp
+    test_slice.cpp
     )
 target_link_libraries(${_TEST_NAME}_slicer_tests test_common orcabench_slicer Catch2::Catch2WithMain)
 set_property(TARGET ${_TEST_NAME}_slicer_tests PROPERTY FOLDER "tests")
