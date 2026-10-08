@@ -1,14 +1,25 @@
-#include <catch2/catch_all.hpp>
+#include <catch2/catch_message.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include "core/Compare.hpp"
 #include "core/Document.hpp"
+#include "core/Measurement.hpp"
+#include "core/Policy.hpp"
 #include "core/Reporters.hpp"
+#include "core/Result.hpp"
+#include "core/RunEvents.hpp"
+#include "core/Runner.hpp"
 #include "core/Sampler.hpp"
+#include "core/Workload.hpp"
 #include "orcabench_test_utils.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <memory>

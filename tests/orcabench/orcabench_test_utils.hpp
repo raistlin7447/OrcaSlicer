@@ -1,5 +1,8 @@
 #pragma once
 
+#include "core/Measurement.hpp"
+#include "core/Policy.hpp"
+#include "core/Result.hpp"
 #include "core/Runner.hpp"
 #include "core/Sampler.hpp"
 #include "core/Workload.hpp"

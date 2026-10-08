@@ -1,12 +1,23 @@
-#include <catch2/catch_all.hpp>
+#include <catch2/catch_message.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "core/BuildId.hpp"
 #include "core/Host.hpp"
+#include "core/Measurement.hpp"
+#include "core/Policy.hpp"
+#include "core/Result.hpp"
+#include "core/RunEvents.hpp"
 #include "core/Runner.hpp"
+#include "core/Sampler.hpp"
+#include "core/Workload.hpp"
 #include "orcabench_test_utils.hpp"
 
 #include <algorithm>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>

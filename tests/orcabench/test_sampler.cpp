@@ -1,11 +1,15 @@
-#include <catch2/catch_all.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include "core/Result.hpp"
 #include "core/Sampler.hpp"
 #include "orcabench_test_utils.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <optional>
 #include <stdexcept>
 #include <thread>
 #include <vector>

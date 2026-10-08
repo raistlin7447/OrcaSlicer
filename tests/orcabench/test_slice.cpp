@@ -1,15 +1,27 @@
-#include <catch2/catch_all.hpp>
+#include <catch2/catch_message.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include "core/Policy.hpp"
+#include "core/Result.hpp"
 #include "core/Runner.hpp"
+#include "core/Workload.hpp"
 #include "slicer/Environment.hpp"
 #include "slicer/Output.hpp"
 
 #include "test_utils.hpp"
 
+#include "libslic3r/ExtrusionEntity.hpp"
+#include "libslic3r/GCode/GCodeProcessor.hpp"
 #include "libslic3r/libslic3r.h"
 
+#include <boost/filesystem/path.hpp>
+
+#include <cstdint>
 #include <fstream>
+#include <ios>
 #include <set>
 #include <string>
 #include <utility>

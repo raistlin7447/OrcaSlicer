@@ -1,15 +1,19 @@
-#include <catch2/catch_all.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "core/Policy.hpp"
+#include "core/Runner.hpp"
 #include "slicer/Environment.hpp"
 
 #include "libslic3r/Thread.hpp"
 #include "libslic3r/Utils.hpp"
 
 #include <boost/filesystem/operations.hpp>
+#include <boost/filesystem/path.hpp>
 #include <boost/log/core.hpp>
 #include <tbb/global_control.h>
 
+#include <cstddef>
 #include <string>
 
 using namespace Slic3r;
