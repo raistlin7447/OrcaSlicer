@@ -30,6 +30,12 @@ struct Flag
 // Every flag, which both the parser and the usage text read, so neither can miss one.
 constexpr Flag flags[] = {
     {"--list", "", [](Options& options, const std::string_view*) { options.list = true; }, "print the catalog's workloads"},
+    {"--policy", "name", [](Options& options, const std::string_view* values) { options.policy = std::string(values[0]); },
+     "run the catalog under a policy, such as quick or precise"},
+    {"--filter", "pattern", [](Options& options, const std::string_view* values) { options.filter = std::string(values[0]); },
+     "take only the workloads whose names match, where * stands for any text"},
+    {"--out", "file.json", [](Options& options, const std::string_view* values) { options.out = std::string(values[0]); },
+     "write the run's result to the file"},
     {"--compare", "a.json b.json",
      [](Options& options, const std::string_view* values) {
          options.compare = CompareFiles {std::string(values[0]), std::string(values[1])};
@@ -78,6 +84,12 @@ Options parse_options(const std::vector<std::string_view>& arguments)
     }
     if (options.allow_mismatch && !options.compare)
         throw OptionsError("--allow-mismatch needs --compare");
+    if (options.filter && !options.policy && !options.list)
+        throw OptionsError("--filter needs --policy or --list");
+    if (options.out && !options.policy)
+        throw OptionsError("--out needs --policy");
+    if (options.policy && options.compare)
+        throw OptionsError("--policy and --compare cannot run together");
     return options;
 }
 
@@ -89,7 +101,7 @@ std::string usage()
     std::string text = "usage: orca_bench [options]\n";
     for (const Flag& flag : flags)
         text += "  " + synopsis(flag) + std::string(widest + 2 - synopsis(flag).size(), ' ') + flag.help + "\n";
-    return text + "exit status: 0 done, 1 error, 2 bad command line, 3 --compare found changed output\n";
+    return text + "exit status: 0 done, 1 error or a failed workload, 2 bad command line, 3 --compare found changed output\n";
 }
 
 bool use_color(ColorChoice choice, bool terminal, const char* no_color, const char* term)

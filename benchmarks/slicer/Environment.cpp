@@ -5,6 +5,7 @@
 
 #include <boost/filesystem/operations.hpp>
 #include <boost/log/core.hpp>
+#include <tbb/task_arena.h>
 
 #include <utility>
 
@@ -41,5 +42,7 @@ void SlicerEnvironment::leave() noexcept
     boost::system::error_code ignored;
     boost::filesystem::remove_all(m_temporary_dir, ignored);
 }
+
+unsigned hardware_threads() { return unsigned(tbb::this_task_arena::max_concurrency()); }
 
 }} // namespace Slic3r::Bench

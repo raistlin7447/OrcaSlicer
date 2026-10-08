@@ -239,4 +239,14 @@ bool enable_terminal_escapes()
 #endif
 }
 
+bool error_is_terminal()
+{
+#ifdef _WIN32
+    DWORD mode = 0;
+    return GetConsoleMode(GetStdHandle(STD_ERROR_HANDLE), &mode) != 0;
+#else
+    return isatty(STDERR_FILENO) == 1;
+#endif
+}
+
 }} // namespace Slic3r::Bench

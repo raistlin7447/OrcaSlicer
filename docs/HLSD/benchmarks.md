@@ -373,6 +373,15 @@ cube small enough for the tests, a plate of 64 pegs, which gives every layer 64 
 travel between, and a sphere of about 130,000 triangles, a dense mesh to slice. Names follow
 `slice/<fixture>/<variant>` and are permanent, since results are keyed by them.
 
+`orca_bench --policy <name>` runs the catalog under that policy, at the thread count TBB runs
+without a cap, which follows the process's affinity. `--filter` takes only the workloads whose names
+match its pattern, where `*` stands for any text, for a listing as well as a run, and a pattern that
+matches nothing is an error, since a run of nothing would look like a pass. `--out` writes the
+result document `--compare` reads. The console prints each workload's table as it finishes, and the
+progress line redraws in place when standard error is a terminal and prints a line per workload
+otherwise. A run exits 1 when a workload failed, after printing every one, and an unknown policy
+exits 2, as any bad command line does.
+
 ## Tests
 
 `tests/data/orcabench/result_v1.json` is written by hand from the schema and is never regenerated

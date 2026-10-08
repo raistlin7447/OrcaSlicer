@@ -40,4 +40,7 @@ std::chrono::nanoseconds cpu_time_step();
 // without, and says whether standard output is a terminal that shows them.
 bool enable_terminal_escapes();
 
+// Whether standard error is a terminal, where a progress line can redraw itself in place.
+bool error_is_terminal();
+
 }} // namespace Slic3r::Bench

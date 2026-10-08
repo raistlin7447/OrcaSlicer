@@ -11,6 +11,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace Slic3r { namespace Bench {
@@ -51,6 +52,10 @@ void validate(const CatalogEntry& entry);
 
 // The entries' names, one per line in the catalog's order.
 std::string listing(const std::vector<CatalogEntry>& catalog);
+
+// Whether the whole name matches the pattern, where * stands for any run of characters, / included,
+// and every other character for itself.
+bool matches(std::string_view pattern, std::string_view name);
 
 // What a workload needs to know about the run it is part of.
 struct RunContext

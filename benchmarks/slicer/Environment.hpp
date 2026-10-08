@@ -29,4 +29,8 @@ private:
     std::optional<tbb::global_control> m_thread_cap;
 };
 
+// The threads TBB runs without a cap, which follows the process's affinity, as the hardware thread count a
+// policy resolves against.
+unsigned hardware_threads();
+
 }} // namespace Slic3r::Bench
