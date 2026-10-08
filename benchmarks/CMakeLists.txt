@@ -6,6 +6,7 @@ add_library(orcabench_core STATIC
     core/Options.cpp
     core/Policy.cpp
     core/Result.cpp
+    core/Runner.cpp
     core/Workload.cpp
     )
 
