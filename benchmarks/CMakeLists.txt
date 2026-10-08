@@ -7,10 +7,15 @@ add_library(orcabench_core STATIC
     core/Policy.cpp
     core/Result.cpp
     core/Runner.cpp
+    core/Sampler.cpp
     core/Workload.cpp
     )
 
 target_include_directories(orcabench_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+# The sampler reads the process on its own thread.
+find_package(Threads REQUIRED)
+target_link_libraries(orcabench_core PUBLIC Threads::Threads)
 
 # json.hpp includes its siblings as <nlohmann/...>, which the nlohmann_json target's include
 # directory cannot resolve.

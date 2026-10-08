@@ -2,13 +2,19 @@
 
 #include "core/Measurement.hpp"
 #include "core/Policy.hpp"
+#include "core/Result.hpp"
 #include "core/Runner.hpp"
+#include "core/Sampler.hpp"
 #include "core/Workload.hpp"
 
+#include <atomic>
+#include <chrono>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -91,6 +97,45 @@ public:
 private:
     std::vector<std::string>& m_calls;
     bool                      m_refuse;
+};
+
+// A process whose memory a test sets and whose CPU time runs at `rate` times the clock, counting the
+// reads so a test can wait for the sampler.
+struct ScriptedProcess
+{
+    std::atomic<std::uint64_t> rss_bytes {0};
+    std::atomic<std::uint64_t> reads {0};
+    std::uint64_t              rate   = 1;
+    bool                       fail   = false;
+    const Clock::time_point    origin = Clock::now();
+
+    // Takes the memory before the time, so a reading inside a span never shows memory set after it.
+    Reading read()
+    {
+        const std::uint64_t     rss = rss_bytes;
+        const Clock::time_point at  = Clock::now();
+        ++reads;
+        if (fail)
+            throw std::runtime_error("the probe failed");
+        return {at, rss, rate * std::uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(at - origin).count())};
+    }
+
+    ProcessProbe probe()
+    {
+        return [this] { return read(); };
+    }
+
+    // Returns once `count` more reads have been taken, and throws if they never are.
+    void await(std::uint64_t count)
+    {
+        const std::uint64_t     target   = reads + count;
+        const Clock::time_point deadline = Clock::now() + std::chrono::seconds(10);
+        while (reads < target) {
+            if (Clock::now() > deadline)
+                throw std::runtime_error("the sampler stopped reading");
+            std::this_thread::yield();
+        }
+    }
 };
 
 }}} // namespace Slic3r::Bench::Test

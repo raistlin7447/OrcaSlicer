@@ -143,10 +143,11 @@ names the call and the pass, such as `execute() threw on timed pass 2: bad alloc
 next one runs. An empty reason to skip fails the workload as well, since the document cannot hold
 a skip without a reason.
 
-Only `execute()` is timed, with its wall time and the process's CPU time taken around it. The
-Runner builds each pass's `Measurement` with the time `execute()` starts, and a span that starts
-before it, or ends after it is reported, is refused. A workload that reuses state from an earlier
-pass therefore fails, and every recorded span lies inside its iteration.
+Only `execute()` is timed, between two readings of the process the Runner takes around it, which
+give its wall time and the CPU time the process used. The Runner builds each pass's `Measurement`
+with the time of the first reading, and a span that starts before it, or ends after it is
+reported, is refused. A workload that reuses state from an earlier pass therefore fails, and every
+recorded span lies inside its iteration.
 
 Every pass, warmups included, must reproduce the first pass's output hash and work stats, since a
 result holds one of each, and a pass that differs fails the workload. The hash therefore leaves out
@@ -154,8 +155,30 @@ whatever varies between runs of the same input, such as the time the G-code head
 pass must also agree on which stages finished, stayed unfinished or never ran, in whatever order it
 reports them, so no stage's row mixes states. A result keeps the hash and the work stats only when
 the policy collects them, and a timed pass becomes an iteration only when wall time is collected,
-so `verify` records its hash and no iterations. The Runner does not record peak memory, since the
-process's high-water mark would give every later iteration an earlier workload's maximum.
+so `verify` records its hash and no iterations. The sampler adds each iteration's peak memory and
+each span's readings.
+
+## The sampler
+
+`Sampler.cpp` reads the process every 5 ms on its own thread through each timed pass, taking its
+resident memory and the CPU time it has used through the `Host` queries. The Runner starts the
+thread before the pass's first reading and stops it after the last, and warmup passes, `verify`
+and `pgo` never sample. The interval is recorded in the measurement identity, as the corpus and
+the affinity are, and Windows rounds the wait up to its clock tick, 15.6 ms unless something has
+raised the timer resolution.
+
+An iteration's peak memory is its highest reading, the same way on every platform, so a spike
+shorter than the interval can go unseen. The operating system's own high-water mark would be
+exact only for an iteration that sets a new record for the process, and only Linux can reset it.
+Each span gets its highest reading, and the CPU time used between the first and last readings
+inside it with the time between them, so its utilization is exact where it was measured. A span
+holding no reading has no memory and one holding fewer than two has no CPU, and `Measurement`
+refuses these keys from a workload. A span's readings are the whole process's, so spans that
+overlap, such as the same step on two objects, share them.
+
+Windows CPU time moves in 15.6 ms steps, and Microsoft documents its precise cycle counts as not
+convertible to time, so a short span there says little about CPU. A `ProcessProbe` takes each
+reading, from `Host` in a run and from a script in the tests.
 
 ## Build identity
 

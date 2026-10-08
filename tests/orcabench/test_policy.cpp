@@ -182,6 +182,7 @@ TEST_CASE("the identity records every setting compare enforces", "[OrcaBench][Po
                                           {"iterations", "3"},
                                           {"metrics", "wall,rss,hash,work"},
                                           {"policy", "quick"},
+                                          {"sampling", "5ms"},
                                           {"stages", "process,export"},
                                           {"threads", std::to_string(hardware)},
                                           {"warmup", "1"}};
