@@ -18,11 +18,16 @@ struct FixtureModel
     std::string unavailable;
 };
 
+// The file "handy:<file>" names under resources_dir()'s handy_models, whether or not it is there, or
+// nothing for "procedural:<shape>", which is built in code. Throws std::invalid_argument for an id that
+// names neither.
+std::optional<std::string> fixture_path(const std::string& id);
+
 // Reads "handy:<file>", one of the models under resources_dir()'s handy_models, or builds
 // "procedural:<shape>", and throws std::invalid_argument for an id that names neither.
 FixtureModel load_fixture(const std::string& id);
 
-// full_print_config() on a bed every handy model fits on, with the layer change G-code validate()
+// The full default print config on a bed every handy model fits on, with the layer change G-code validate()
 // requires and object labels off, then the keys given, throwing for a key the slicer does not know or
 // a value it cannot read.
 DynamicPrintConfig hermetic_config(const Properties& keys);

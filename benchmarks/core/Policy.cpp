@@ -47,9 +47,9 @@ const std::vector<Preset>& presets()
     static const MetricSet every_metric = {Metric::Wall, Metric::Rss, Metric::Hash, Metric::Work};
     // name, threads, warmup, iterations, stages, metrics, pgo_eligible_only; counts_fixed
     static const std::vector<Preset> table = {
-        {{"quick", 0, 1, 3, {Stage::Process, Stage::Export}, every_metric, false}, false},
-        {{"precise", 1, 2, 10, {Stage::Process, Stage::Export}, every_metric, false}, false},
-        {{"verify", 0, 0, 1, {Stage::Process, Stage::Export}, {Metric::Hash}, false}, false},
+        {{"quick", 0, 1, 3, {Stage::Load, Stage::Process, Stage::Export}, every_metric, false}, false},
+        {{"precise", 1, 2, 10, {Stage::Load, Stage::Process, Stage::Export}, every_metric, false}, false},
+        {{"verify", 0, 0, 1, {Stage::Load, Stage::Process, Stage::Export}, {Metric::Hash}, false}, false},
         {{"pgo", 0, 0, 1, {Stage::Load, Stage::Process, Stage::Export}, {}, true}, true},
     };
     return table;
@@ -124,11 +124,13 @@ Policy Policy::resolve(std::string_view preset, const PolicyOverrides& overrides
         throw PolicyError("a run needs at least one iteration");
     if (policy.stages.empty())
         throw PolicyError("a run needs at least one stage to time");
-    // Only export writes G-code, and the hash and the work stats both come from it.
+    // The work stats come from the G-code export writes, and a hash from that G-code or from the file load reads.
     if (policy.stages.count(Stage::Export) == 0) {
-        const std::size_t dropped = policy.metrics.erase(Metric::Hash) + policy.metrics.erase(Metric::Work);
+        std::size_t dropped = policy.metrics.erase(Metric::Work);
+        if (policy.stages.count(Stage::Load) == 0)
+            dropped += policy.metrics.erase(Metric::Hash);
         if (dropped != 0 && policy.metrics.empty())
-            throw PolicyError(policy.name + " collects only what export writes, so it needs the export stage");
+            throw PolicyError(policy.name + " collects only what export or load produces, so it needs one of those stages");
     }
     return policy;
 }

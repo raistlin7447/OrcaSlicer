@@ -6,9 +6,13 @@
 #include "libslic3r/BoundingBox.hpp"
 #include "libslic3r/Utils.hpp"
 
+#include <boost/filesystem/operations.hpp>
+
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 using namespace Slic3r;
 using namespace Slic3r::Bench;
@@ -29,6 +33,32 @@ public:
 
 private:
     const std::string m_previous;
+};
+
+// An empty directory of the scope's own as temporary_dir() for the scope's lifetime.
+class OwnTemporaryDir
+{
+public:
+    OwnTemporaryDir()
+        : m_previous(temporary_dir())
+        , m_path(boost::filesystem::temp_directory_path() / boost::filesystem::unique_path("orcabench-test-%%%%-%%%%-%%%%"))
+    {
+        boost::filesystem::create_directories(m_path);
+        set_temporary_dir(m_path.string());
+    }
+    ~OwnTemporaryDir()
+    {
+        set_temporary_dir(m_previous);
+        boost::system::error_code ignored;
+        boost::filesystem::remove_all(m_path, ignored);
+    }
+
+    OwnTemporaryDir(const OwnTemporaryDir&)            = delete;
+    OwnTemporaryDir& operator=(const OwnTemporaryDir&) = delete;
+
+private:
+    const std::string             m_previous;
+    const boost::filesystem::path m_path;
 };
 
 } // namespace
@@ -70,9 +100,38 @@ TEST_CASE("a handy fixture reads the model the app offers, and a missing one nam
     CHECK_FALSE(voron.model->objects.empty());
     CHECK(voron.unavailable.empty());
 
+    const FixtureModel badge = load_fixture("handy:OrcaBadge.3mf");
+    REQUIRE(badge.model);
+    CHECK(badge.model->objects.size() == 3);
+
     const FixtureModel missing = load_fixture("handy:missing.drc");
     CHECK_FALSE(missing.model);
     CHECK_THAT(missing.unavailable, EndsWith("missing.drc is missing"));
+}
+
+TEST_CASE("a 3MF fixture keeps no backup folder", "[OrcaBench][Fixtures]")
+{
+    const TreeResources   resources;
+    const OwnTemporaryDir temporary;
+    const FixtureModel    badge = load_fixture("handy:OrcaBadge.3mf");
+    REQUIRE(badge.model);
+    std::vector<std::string> files;
+    for (const auto& entry : boost::filesystem::recursive_directory_iterator(temporary_dir()))
+        if (boost::filesystem::is_regular_file(entry.status()))
+            files.push_back(entry.path().string());
+    CHECK(files.empty());
+}
+
+TEST_CASE("a handy fixture's file is the model under handy_models, and a procedural fixture has none", "[OrcaBench][Fixtures]")
+{
+    const TreeResources              resources;
+    const std::optional<std::string> benchy = fixture_path("handy:3DBenchy.drc");
+    REQUIRE(benchy);
+    CHECK(boost::filesystem::exists(*benchy));
+    CHECK(boost::filesystem::path(*benchy).filename() == "3DBenchy.drc");
+    CHECK(boost::filesystem::path(*benchy).parent_path().filename() == "handy_models");
+    CHECK_FALSE(fixture_path("procedural:smoke-cube"));
+    CHECK_THROWS_AS(fixture_path("smoke-cube"), std::invalid_argument);
 }
 
 TEST_CASE("a fixture id that names no fixture is refused", "[OrcaBench][Fixtures]")
@@ -84,12 +143,15 @@ TEST_CASE("a fixture id that names no fixture is refused", "[OrcaBench][Fixtures
 
 TEST_CASE("the hermetic config sets the bed, the layer change G-code and no object labels, then the entry's keys", "[OrcaBench][Fixtures]")
 {
-    const DynamicPrintConfig config = hermetic_config({{"layer_height", "0.3"}});
+    const DynamicPrintConfig config = hermetic_config({{"layer_height", "0.3"}, {"z_hop_types", "Spiral Lift"}, {"nozzle_type", "brass"}});
     CHECK(config.opt_serialize("printable_area") == "0x0,350x0,350x350,0x350");
     CHECK(config.opt_string("layer_change_gcode") == "G92 E0");
     CHECK_FALSE(config.opt_bool("gcode_label_objects"));
     CHECK_THAT(config.opt_float("printable_height"), WithinAbs(350., 1e-9));
     CHECK_THAT(config.opt_float("layer_height"), WithinAbs(0.3, 1e-9));
+    CHECK(config.opt_serialize("z_hop_types") == "Spiral Lift");
+    CHECK(config.opt_serialize("nozzle_type") == "brass");
+    CHECK(config.opt_serialize("retract_lift_enforce") == "All Surfaces");
     CHECK_THROWS(hermetic_config({{"no_such_key", "1"}}));
 }
 

@@ -17,7 +17,7 @@ public:
 };
 
 // Reads a catalog, an object holding an entries array, refusing an entry validate() refuses, a field it
-// does not know, so a misspelt one is never dropped, and a name that repeats.
+// does not know, so a misspelled one is never dropped, and a name that repeats.
 std::vector<CatalogEntry> read_catalog(std::string_view text);
 
 // Reads every .json file in the directory as one catalog, in file name order, naming the file in any

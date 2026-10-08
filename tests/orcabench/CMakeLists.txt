@@ -35,6 +35,7 @@ orcaslicer_discover_tests(${_TEST_NAME}_tests)
 add_executable(${_TEST_NAME}_slicer_tests
     test_environment.cpp
     test_fixtures.cpp
+    test_load.cpp
     test_slice.cpp
     )
 target_link_libraries(${_TEST_NAME}_slicer_tests test_common orcabench_slicer Catch2::Catch2WithMain)

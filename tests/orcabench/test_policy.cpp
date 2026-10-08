@@ -32,9 +32,9 @@ TEST_CASE("each preset resolves to its own settings", "[OrcaBench][Policy]")
 {
     const auto [name, threads, warmup, iterations, stages, metrics, pgo_only] =
         GENERATE(table<std::string, unsigned, unsigned, unsigned, std::string, std::string, bool>({
-            {"quick", hardware, 1, 3, "process,export", "wall,rss,hash,work", false},
-            {"precise", 1, 2, 10, "process,export", "wall,rss,hash,work", false},
-            {"verify", hardware, 0, 1, "process,export", "hash", false},
+            {"quick", hardware, 1, 3, "load,process,export", "wall,rss,hash,work", false},
+            {"precise", 1, 2, 10, "load,process,export", "wall,rss,hash,work", false},
+            {"verify", hardware, 0, 1, "load,process,export", "hash", false},
             {"pgo", hardware, 0, 1, "load,process,export", "none", true},
         }));
     CAPTURE(name);
@@ -114,18 +114,27 @@ TEST_CASE("a run without a stage is refused", "[OrcaBench][Policy]")
     CHECK_THROWS_AS(resolved("quick", overrides), PolicyError);
 }
 
-TEST_CASE("a run that leaves out export collects neither the hash nor the work stats", "[OrcaBench][Policy]")
+TEST_CASE("a run that leaves out export collects no work stats, and one that also leaves out load no hash", "[OrcaBench][Policy]")
 {
+    const auto [stages, metrics] = GENERATE(table<StageSet, std::string>({
+        {{Stage::Process}, "wall,rss"},
+        {{Stage::Load}, "wall,rss,hash"},
+        {{Stage::Load, Stage::Process}, "wall,rss,hash"},
+    }));
     PolicyOverrides overrides;
-    overrides.stages = StageSet {Stage::Process};
-    CHECK(to_string(resolved("quick", overrides).metrics) == "wall,rss");
+    overrides.stages = stages;
+    CAPTURE(to_string(stages));
+    CHECK(to_string(resolved("quick", overrides).metrics) == metrics);
 }
 
-TEST_CASE("a run that collects only the hash is refused without export", "[OrcaBench][Policy]")
+TEST_CASE("a run that collects only the hash is refused without export or load", "[OrcaBench][Policy]")
 {
-    PolicyOverrides overrides;
-    overrides.stages = StageSet {Stage::Process};
-    CHECK_THROWS_AS(resolved("verify", overrides), PolicyError);
+    PolicyOverrides process;
+    process.stages = StageSet {Stage::Process};
+    CHECK_THROWS_WITH(resolved("verify", process), "verify collects only what export or load produces, so it needs one of those stages");
+    PolicyOverrides load;
+    load.stages = StageSet {Stage::Load};
+    CHECK(to_string(resolved("verify", load).metrics) == "hash");
 }
 
 TEST_CASE("pgo takes a thread count", "[OrcaBench][Policy]")
@@ -177,7 +186,7 @@ TEST_CASE("the identity records every setting compare enforces", "[OrcaBench][Po
                                           {"metrics", "wall,rss,hash,work"},
                                           {"policy", "quick"},
                                           {"sampling", "5ms"},
-                                          {"stages", "process,export"},
+                                          {"stages", "load,process,export"},
                                           {"threads", std::to_string(hardware)},
                                           {"warmup", "1"}};
     CHECK(resolved("quick").identity() == expected);
