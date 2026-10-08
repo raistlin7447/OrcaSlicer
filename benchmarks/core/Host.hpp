@@ -1,6 +1,8 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
+#include <string>
 
 namespace Slic3r { namespace Bench {
 
@@ -14,5 +16,24 @@ std::uint64_t peak_rss_bytes();
 
 // User plus system CPU time consumed.
 std::uint64_t process_cpu_ns();
+
+// Every query reports this machine, falling back to something coarser when the platform does not
+// say, and to "unknown" only when nothing coarser exists.
+
+// Name of this machine.
+std::string host_name();
+
+// Operating system and version.
+std::string os_description();
+
+// Processor model, or the architecture where the model is not published.
+std::string cpu_model();
+
+// Logical processors on this machine, which is not necessarily how many threads TBB runs.
+unsigned logical_cores();
+
+// The step in which process_cpu_ns() advances each thread's time, and zero where it counts finely
+// enough not to matter.
+std::chrono::nanoseconds cpu_time_step();
 
 }} // namespace Slic3r::Bench
