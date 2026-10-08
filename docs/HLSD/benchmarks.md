@@ -8,11 +8,15 @@ change that makes slicing slower shows up along with the step that got slower.
 
 ## Where it lives
 
-`benchmarks/` builds `orcabench_core`, a static library that never links libslic3r, and the
-`orca_bench` command line on top of it, so both and the tests in `tests/orcabench` build without
-the slicer. It is built when `ORCA_BENCHMARKS` is on, which defaults to `BUILD_TESTS` in a new build
-directory and which the build scripts turn on with the tests, so their test builds compile it and
-run its suite. Turning the option off removes it.
+`benchmarks/` builds `orcabench_core`, a static library that never links libslic3r, and
+`orcabench_slicer`, an object library of what slices: the run environment and the workload kinds in
+`benchmarks/kinds/`. `orca_bench` links both. `tests/orcabench` builds `orcabench_tests` on core
+alone, so it builds without the slicer and runs in about a second, and `orcabench_slicer_tests` for
+what slices. It is built when `ORCA_BENCHMARKS` is on, which defaults to `BUILD_TESTS` in a new
+build directory and which the build scripts turn on with the tests, so their test builds compile it
+and run its suites. Turning the option off removes it. `cmake/modules/OrcaSlicerRuntimeDeps.cmake`
+copies the runtime libraries the executables that slice need beside them, for the test suites and
+`orca_bench` alike.
 
 ## Step timestamps
 
@@ -111,14 +115,14 @@ one scope in any of the three forms, a number that is not finite and a metric re
 refused where they are reported, so one bad value fails only its own workload and never reaches
 the document writer, which would refuse the whole result.
 
-`WorkloadKinds` maps kind names to the factories that build a workload from its entry. A kind
-adds itself from its own file through a `WorkloadKindRegistrar`, and the kinds compile into
-`orca_bench` itself, since a static library's linker drops registrars that nothing references.
-The process-wide registry is a function-local static, so a registrar reaches it during static
-initialization in any order, and tests give a registrar their own registry. An exception cannot
-leave a static initializer without ending the process, so a registrar keeps a failed registration,
-such as a kind added twice, for `require_registered()`, which `orca_bench` calls before anything
-else.
+`WorkloadKinds` maps kind names to the factories that build a workload from its entry. A kind adds
+itself from its own file through a `WorkloadKindRegistrar`, and the kinds compile into
+`orcabench_slicer`, an object library, which puts every object in each executable that links it,
+where a static library's linker drops registrars that nothing references. The process-wide registry
+is a function-local static, so a registrar reaches it during static initialization in any order, and
+tests give a registrar their own registry. An exception cannot leave a static initializer without
+ending the process, so a registrar keeps a failed registration, such as a kind added twice, for
+`require_registered()`, which `orca_bench` calls before anything else.
 
 `orca_bench` reads its arguments with a parser that shares one table of flags with the usage
 text, prints the catalog's workloads with `--list`, and prints the usage for `--help`, even beside
@@ -309,6 +313,18 @@ The two runs are timed apart, one after the other, so anything that changes on t
 them, such as its temperature or a background job, moves the figures as a code change would, and the
 comparison cannot tell the two apart. Runs made back to back on an idle machine keep that small.
 
+## Slicing
+
+`SlicerEnvironment` in `benchmarks/slicer/Environment.cpp` is the `RunEnvironment` of a run that
+slices. It turns logging off, since a slice logs at every step and the writes would land inside
+timed passes, points `resources_dir()` at the resources it is given, which `orca_bench` takes from
+the source tree, and gives the run a temporary directory of its own, which leaving removes. It holds
+one `tbb::global_control` at the policy's thread count for the whole run, since building and tearing
+down a cap between passes would add time and variance to what is measured. The first
+`Print::process()` names the pool's threads by waiting until each of them runs, which a cap below
+the arena's size holds back forever, so the environment names them before it caps. Leaving puts back
+every setting it changed.
+
 ## Tests
 
 `tests/data/orcabench/result_v1.json` is written by hand from the schema and is never regenerated
@@ -316,4 +332,6 @@ from the writer, which would make the golden test agree with whatever the writer
 expected text of both console views is laid out apart from the code that prints it for the same
 reason. The document tests compare text with the whitespace between tokens removed, so a change in
 indentation alone does not fail them. Stripping the escape sequences from colored output must give
-the plain text exactly. Every refusal above has a test that fails without it.
+the plain text exactly. Every refusal above has a test that fails without it. Under ctest each test
+that slices has five minutes, so one stuck waiting on TBB fails well inside the unit-test job's own
+limit.

@@ -59,9 +59,25 @@ endif ()
 
 set_property(TARGET orcabench_core PROPERTY FOLDER "benchmarks")
 
-# Kinds add themselves to the registry during static initialization, so they compile into the
-# executable itself, since a static library's linker would drop registrars nothing references.
+# What slices, which only this library links, so orcabench_core and its tests never need libslic3r.
+# Kinds add themselves to the registry during static initialization, and an object library puts
+# every object in each executable, where a static library's linker would drop registrars nothing
+# references.
 file(GLOB _orcabench_kinds CONFIGURE_DEPENDS kinds/*.cpp)
-add_executable(orca_bench main.cpp ${_orcabench_kinds})
-target_link_libraries(orca_bench PRIVATE orcabench_core)
+add_library(orcabench_slicer OBJECT
+    slicer/Environment.cpp
+    slicer/Nanosvg.cpp
+    ${_orcabench_kinds}
+    )
+target_link_libraries(orcabench_slicer PUBLIC orcabench_core libslic3r)
+# The resources orca_bench and the tests that slice read printer data from.
+set(_orcabench_resources "${CMAKE_SOURCE_DIR}/resources")
+file(TO_NATIVE_PATH "${_orcabench_resources}" _orcabench_resources)
+target_compile_definitions(orcabench_slicer PUBLIC ORCABENCH_RESOURCES_DIR=R"\(${_orcabench_resources}\)")
+set_property(TARGET orcabench_slicer PROPERTY FOLDER "benchmarks")
+
+add_executable(orca_bench main.cpp)
+target_link_libraries(orca_bench PRIVATE orcabench_slicer)
 set_property(TARGET orca_bench PROPERTY FOLDER "benchmarks")
+include(OrcaSlicerRuntimeDeps)
+orcaslicer_copy_test_dlls(orca_bench)

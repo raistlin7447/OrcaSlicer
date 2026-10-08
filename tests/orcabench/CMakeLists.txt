@@ -30,6 +30,16 @@ target_compile_definitions(${_TEST_NAME}_tests PRIVATE ORCABENCH_HAS_COMMIT=${_h
 
 orcaslicer_discover_tests(${_TEST_NAME}_tests)
 
+# The tests that slice, apart so the suite above builds without libslic3r and runs in about a second.
+add_executable(${_TEST_NAME}_slicer_tests
+    test_environment.cpp
+    )
+target_link_libraries(${_TEST_NAME}_slicer_tests test_common orcabench_slicer Catch2::Catch2WithMain)
+set_property(TARGET ${_TEST_NAME}_slicer_tests PROPERTY FOLDER "tests")
+orcaslicer_copy_test_dlls(${_TEST_NAME}_slicer_tests)
+# A pass stuck waiting on TBB fails after five minutes, well inside the unit-test job's own limit.
+orcaslicer_discover_tests(${_TEST_NAME}_slicer_tests PROPERTIES TIMEOUT 300)
+
 # orca_bench builds outside build/tests, which is all the CI unit-test job receives, and
 # run_orca_bench.cmake checks its exit code as well as its output.
 set(_run_orca_bench "${CMAKE_CURRENT_SOURCE_DIR}/run_orca_bench.cmake")
