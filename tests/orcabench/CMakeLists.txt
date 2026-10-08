@@ -41,8 +41,29 @@ add_test(NAME orca_bench_refuses_an_unknown_argument
 add_test(NAME orca_bench_prints_the_usage_for_help_beside_list
          COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:orca_bench> -DARGS=--list$<SEMICOLON>--help -DEXIT=0
                  "-DOUTPUT=usage: orca_bench" -P ${_run_orca_bench})
+# result_v1_changed.json ran at other threads, and changed the idler's output.
+set(_before "${CMAKE_SOURCE_DIR}/tests/data/orcabench/result_v1.json")
+set(_after "${CMAKE_SOURCE_DIR}/tests/data/orcabench/result_v1_changed.json")
+add_test(NAME orca_bench_compares_two_results
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:orca_bench> "-DARGS=--compare$<SEMICOLON>${_before}$<SEMICOLON>${_before}" -DEXIT=0
+                 "-DOUTPUT=1 compared, 0 with changed output" -P ${_run_orca_bench})
+add_test(NAME orca_bench_refuses_results_that_measured_differently
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:orca_bench> "-DARGS=--compare$<SEMICOLON>${_before}$<SEMICOLON>${_after}" -DEXIT=1
+                 "-DOUTPUT=pass --allow-mismatch to compare them anyway" -P ${_run_orca_bench})
+add_test(NAME orca_bench_exits_3_when_output_changed
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:orca_bench>
+                 "-DARGS=--compare$<SEMICOLON>${_before}$<SEMICOLON>${_after}$<SEMICOLON>--allow-mismatch" -DEXIT=3
+                 "-DOUTPUT=OUTPUT CHANGED in 1 workload" -P ${_run_orca_bench})
+add_test(NAME orca_bench_names_a_result_it_cannot_read
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:orca_bench> "-DARGS=--compare$<SEMICOLON>${_before}$<SEMICOLON>${_before}.missing"
+                 -DEXIT=1 "-DOUTPUT=cannot read .*result_v1.json.missing" -P ${_run_orca_bench})
+add_test(NAME orca_bench_needs_two_results_to_compare
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:orca_bench> "-DARGS=--compare$<SEMICOLON>${_before}" -DEXIT=2
+                 "-DOUTPUT=--compare needs a.json b.json" -P ${_run_orca_bench})
 set_tests_properties(orca_bench_lists_the_catalog orca_bench_refuses_an_unknown_argument
-                     orca_bench_prints_the_usage_for_help_beside_list PROPERTIES LABELS RequiresApp)
+                     orca_bench_prints_the_usage_for_help_beside_list orca_bench_compares_two_results
+                     orca_bench_refuses_results_that_measured_differently orca_bench_exits_3_when_output_changed
+                     orca_bench_names_a_result_it_cannot_read orca_bench_needs_two_results_to_compare PROPERTIES LABELS RequiresApp)
 
 # GitCommitHash.cmake lives outside build/tests too, and git may be missing where tests run.
 add_test(NAME git_commit_hash_counts_an_untracked_kind

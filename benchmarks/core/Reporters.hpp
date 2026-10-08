@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/Compare.hpp"
 #include "core/Result.hpp"
 #include "core/RunEvents.hpp"
 #include "core/Summary.hpp"
@@ -71,5 +72,19 @@ private:
 // The events that feed a reporter and, when given one, a progress line it clears before each
 // workload is reported.
 RunEvents report_events(Reporter& reporter, Progress* progress);
+
+// How write_comparison() lays out a comparison, which the command line fills.
+struct CompareView
+{
+    // What the header calls each run, such as the file it was read from.
+    std::string label_a        = "a";
+    std::string label_b        = "b";
+    double      collapse_below = collapse_share;
+    SortBy      sort_by        = SortBy::Time;
+};
+
+// Writes changed output first, then a summary of the walls, then a table per workload and the
+// workloads not compared, each part as wide as its columns.
+void write_comparison(std::ostream& out, const Comparison& comparison, const CompareView& view);
 
 }} // namespace Slic3r::Bench

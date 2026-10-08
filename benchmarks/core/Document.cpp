@@ -5,6 +5,8 @@
 #include <charconv>
 #include <cmath>
 #include <cstdio>
+#include <fstream>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <set>
@@ -77,27 +79,6 @@ void civil_from_days(std::int64_t z, std::int64_t& y, unsigned& m, unsigned& d)
     d = doy - (153 * mp + 2) / 5 + 1;
     m = mp < 10 ? mp + 3 : mp - 9;
     y = static_cast<std::int64_t>(yoe) + era * 400 + (m <= 2);
-}
-
-// Writes "2026-09-28T16:42:07.123Z", assuming system_clock counts from the Unix epoch, as every
-// implementation does and C++20 requires.
-std::string to_iso8601(WallTime time)
-{
-    const std::int64_t ms      = time.time_since_epoch().count();
-    const std::int64_t seconds = floor_div(ms, ms_per_second);
-    const std::int64_t days    = floor_div(seconds, seconds_per_day);
-    const std::int64_t of_day  = seconds - days * seconds_per_day;
-    std::int64_t year  = 0;
-    unsigned     month = 0;
-    unsigned     day   = 0;
-    civil_from_days(days, year, month, day);
-    if (year < 0 || year > 9999)
-        throw DocumentError("started_at is outside the years 0000 to 9999");
-    char text[40];
-    std::snprintf(text, sizeof(text), "%04lld-%02u-%02uT%02lld:%02lld:%02lld.%03lldZ", static_cast<long long>(year), month,
-                  day, static_cast<long long>(of_day / 3600), static_cast<long long>(of_day % 3600 / 60),
-                  static_cast<long long>(of_day % 60), static_cast<long long>(ms - seconds * ms_per_second));
-    return text;
 }
 
 // Accepts only the form to_iso8601() writes.
@@ -418,6 +399,26 @@ MachineIdentity read_machine(const Json& json)
 
 } // namespace
 
+// Assumes system_clock counts from the Unix epoch, as every implementation does and C++20 requires.
+std::string to_iso8601(WallTime time)
+{
+    const std::int64_t ms      = time.time_since_epoch().count();
+    const std::int64_t seconds = floor_div(ms, ms_per_second);
+    const std::int64_t days    = floor_div(seconds, seconds_per_day);
+    const std::int64_t of_day  = seconds - days * seconds_per_day;
+    std::int64_t year  = 0;
+    unsigned     month = 0;
+    unsigned     day   = 0;
+    civil_from_days(days, year, month, day);
+    if (year < 0 || year > 9999)
+        throw DocumentError("started_at is outside the years 0000 to 9999");
+    char text[40];
+    std::snprintf(text, sizeof(text), "%04lld-%02u-%02uT%02lld:%02lld:%02lld.%03lldZ", static_cast<long long>(year), month,
+                  day, static_cast<long long>(of_day / 3600), static_cast<long long>(of_day % 3600 / 60),
+                  static_cast<long long>(of_day % 60), static_cast<long long>(ms - seconds * ms_per_second));
+    return text;
+}
+
 std::string write_document(const Result& result)
 {
     Json json;
@@ -456,6 +457,19 @@ Result read_document(std::string_view text)
     } catch (const Json::exception& error) {
         // Converts the parser's exceptions, so no caller needs json.hpp to catch them.
         throw DocumentError(error.what());
+    }
+}
+
+Result read_document_file(const std::string& path)
+{
+    std::ifstream     file(path, std::ios::binary);
+    const std::string text {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+    if (!file.is_open() || file.bad())
+        throw DocumentError("cannot read " + path);
+    try {
+        return read_document(text);
+    } catch (const DocumentError& error) {
+        throw DocumentError(path + ": " + error.what());
     }
 }
 

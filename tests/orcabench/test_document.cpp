@@ -1,6 +1,7 @@
 #include <catch2/catch_message.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
 
 #include "core/Document.hpp"
 #include "core/Policy.hpp"
@@ -401,4 +402,13 @@ TEST_CASE("a value that would not read back is not written", "[OrcaBench][Docume
     Result before_year_zero = sample();
     before_year_zero.suite.started_at = WallTime(std::chrono::milliseconds(-62167219200001)); // -0001-12-31T23:59:59.999Z
     CHECK_THROWS_AS(write_document(before_year_zero), DocumentError);
+}
+
+TEST_CASE("a document is read from its file, and an error names the file", "[OrcaBench][Document]")
+{
+    const std::string path = std::string(TEST_DATA_DIR) + "/orcabench/result_v1.json";
+    CHECK(read_document_file(path).workloads.size() == 3);
+    CHECK_THROWS_WITH(read_document_file(path + ".missing"), "cannot read " + path + ".missing");
+    const std::string newer = std::string(TEST_DATA_DIR) + "/orcabench/result_v9.json";
+    CHECK_THROWS_WITH(read_document_file(newer), newer + ": schema 9.0 cannot be read by this build, which reads 1.x");
 }

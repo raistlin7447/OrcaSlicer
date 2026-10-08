@@ -187,6 +187,7 @@ WorkloadComparison compare_workload(const std::string& name, const Result& a, co
     compared.hash_a           = in_a->output_hash;
     compared.hash_b           = in_b->output_hash;
     compared.work_differences = work_differences(in_a->work, in_b->work);
+    compared.work_in_both     = in_a->work && in_b->work;
     compared.output_changed   = compared.hash_a != compared.hash_b || !compared.work_differences.empty();
 
     const WorkloadSummary summary_a = summarize(*in_a, a, options.verbose);

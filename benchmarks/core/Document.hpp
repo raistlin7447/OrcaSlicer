@@ -20,8 +20,14 @@ public:
 // origin().
 std::string write_document(const Result& result);
 
+// A suite's start as the document writes it, in UTC, such as "2026-09-28T16:42:07.123Z".
+std::string to_iso8601(decltype(Suite::started_at) time);
+
 // Reads what write_document() writes, from any minor version of this schema major, ignoring
 // fields it does not know.
 Result read_document(std::string_view text);
+
+// Reads the document in the file at `path`, naming the path in any error.
+Result read_document_file(const std::string& path);
 
 }} // namespace Slic3r::Bench
