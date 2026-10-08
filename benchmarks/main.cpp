@@ -1,3 +1,4 @@
+#include "core/Catalog.hpp"
 #include "core/Compare.hpp"
 #include "core/Document.hpp"
 #include "core/Host.hpp"
@@ -8,7 +9,6 @@
 #include <cstdlib>
 #include <exception>
 #include <iostream>
-#include <vector>
 
 using namespace Slic3r::Bench;
 
@@ -43,9 +43,7 @@ int main(int argc, char** argv)
         if (options.compare)
             return compare_files(options);
         if (options.list) {
-            // No catalog file is read, so there is nothing to list.
-            const std::vector<CatalogEntry> catalog;
-            std::cout << listing(catalog);
+            std::cout << listing(read_catalog_dir(ORCABENCH_CATALOG_DIR));
             return 0;
         }
         std::cout << usage();

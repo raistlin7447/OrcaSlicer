@@ -1,5 +1,6 @@
 add_library(orcabench_core STATIC
     core/BuildId.cpp
+    core/Catalog.cpp
     core/Compare.cpp
     core/Document.cpp
     core/Host.cpp
@@ -15,6 +16,10 @@ add_library(orcabench_core STATIC
     )
 
 target_include_directories(orcabench_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+# The catalogs orca_bench lists and runs, which the tests read too.
+set(_orcabench_catalog "${CMAKE_CURRENT_SOURCE_DIR}/catalog")
+file(TO_NATIVE_PATH "${_orcabench_catalog}" _orcabench_catalog)
+target_compile_definitions(orcabench_core PUBLIC ORCABENCH_CATALOG_DIR=R"\(${_orcabench_catalog}\)")
 
 # The sampler reads the process on its own thread.
 find_package(Threads REQUIRED)

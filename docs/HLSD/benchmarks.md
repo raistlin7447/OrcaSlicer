@@ -356,6 +356,23 @@ one the slicer does not know fails the workload, since the config's strict sette
 unknown key. The defaults are applied option by option, so each enum list keeps the names it reads
 and writes, which the copies `full_print_config()` makes lack.
 
+Catalogs live in `benchmarks/catalog/`, and `core/Catalog.cpp` reads every `.json` file there as one
+catalog, in file name order, so a new kind's catalog is found without code. A catalog is an object
+holding an `entries` array, and each entry gives its name, kind, fixture, tier, whether PGO training
+may run it, its tags and its config. A field the reader does not know is refused, so a misspelled
+`config` cannot run a workload on defaults unnoticed, and so is a name that repeats, within a file
+or across them. `--list` prints the catalog.
+
+`slicing.json` holds five handy models, 3DBenchy, Stanford_Bunny, Voron_Design_Cube_v7,
+ksr_fdmtest_v4 and OrcaCube_v2, each under four configurations, classic and arachne walls, arachne
+with tree supports and classic with normal supports, the grid a hand-made before and after of the
+Clipper2 migration measured, so that comparison can be run again. The models span both of the
+pipeline's cost shapes, from parts like the Voron cube, where exporting the G-code takes most of the
+time, to ones like the Benchy, where processing does. Three procedural shapes join them: a smoke
+cube small enough for the tests, a plate of 64 pegs, which gives every layer 64 islands to wall and
+travel between, and a sphere of about 130,000 triangles, a dense mesh to slice. Names follow
+`slice/<fixture>/<variant>` and are permanent, since results are keyed by them.
+
 ## Tests
 
 `tests/data/orcabench/result_v1.json` is written by hand from the schema and is never regenerated

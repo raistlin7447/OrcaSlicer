@@ -2,6 +2,7 @@
 
 #include "libslic3r/TriangleMesh.hpp"
 #include "libslic3r/Utils.hpp"
+#include "libslic3r/libslic3r.h"
 
 #include <boost/filesystem/operations.hpp>
 
@@ -20,13 +21,33 @@ constexpr std::string_view procedural_prefix = "procedural:";
 
 bool starts_with(const std::string& text, std::string_view prefix) { return text.compare(0, prefix.size(), prefix) == 0; }
 
+// A plate of 64 short pegs, so every layer has 64 islands to wall and travel between.
+TriangleMesh peg_grid()
+{
+    TriangleMesh mesh = make_cube(64., 64., 2.);
+    for (int row = 0; row < 8; ++row)
+        for (int column = 0; column < 8; ++column) {
+            TriangleMesh peg = make_cylinder(2., 14., 2 * PI / 32);
+            peg.translate(float(4 + 8 * column), float(4 + 8 * row), 0.f);
+            mesh.merge(peg);
+        }
+    return mesh;
+}
+
 Model procedural(const std::string& shape)
 {
-    Model model;
+    TriangleMesh mesh;
     if (shape == "smoke-cube")
-        model.add_object(shape.c_str(), "", make_cube(20., 20., 20.))->add_instance();
+        mesh = make_cube(20., 20., 20.);
+    else if (shape == "peg-grid")
+        mesh = peg_grid();
+    else if (shape == "fine-sphere")
+        // About 130,000 triangles, a dense mesh to slice.
+        mesh = make_sphere(25., PI / 180);
     else
         throw std::invalid_argument("no procedural shape is called '" + shape + "'");
+    Model model;
+    model.add_object(shape.c_str(), "", std::move(mesh))->add_instance();
     return model;
 }
 

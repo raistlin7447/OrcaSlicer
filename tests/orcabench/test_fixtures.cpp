@@ -5,12 +5,16 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
+#include "core/Catalog.hpp"
+#include "core/Workload.hpp"
 #include "slicer/Fixtures.hpp"
 
 #include "libslic3r/BoundingBox.hpp"
+#include "libslic3r/Point.hpp"
 #include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/Utils.hpp"
 
+#include <set>
 #include <stdexcept>
 #include <string>
 
@@ -39,7 +43,9 @@ private:
 
 TEST_CASE("a procedural fixture is one object with one instance, centered on the bed", "[OrcaBench][Fixtures]")
 {
-    const FixtureModel fixture = load_fixture("procedural:smoke-cube");
+    const std::string shape = GENERATE(as<std::string> {}, "smoke-cube", "peg-grid", "fine-sphere");
+    CAPTURE(shape);
+    const FixtureModel fixture = load_fixture("procedural:" + shape);
     REQUIRE(fixture.model);
     REQUIRE(fixture.model->objects.size() == 1);
     CHECK(fixture.model->objects.front()->instances.size() == 1);
@@ -47,7 +53,21 @@ TEST_CASE("a procedural fixture is one object with one instance, centered on the
     CHECK_THAT(box.center().x(), WithinAbs(175., 1e-6));
     CHECK_THAT(box.center().y(), WithinAbs(175., 1e-6));
     CHECK_THAT(box.min.z(), WithinAbs(0., 1e-6));
-    CHECK_THAT(box.size().z(), WithinAbs(20., 1e-6));
+}
+
+TEST_CASE("the peg grid is a plate of pegs and the fine sphere a sphere of many triangles", "[OrcaBench][Fixtures]")
+{
+    const FixtureModel pegs = load_fixture("procedural:peg-grid");
+    REQUIRE(pegs.model);
+    const Vec3d plate = pegs.model->bounding_box_exact().size();
+    CHECK_THAT(plate.x(), WithinAbs(64., 1e-6));
+    CHECK_THAT(plate.y(), WithinAbs(64., 1e-6));
+    CHECK_THAT(plate.z(), WithinAbs(14., 1e-6));
+
+    const FixtureModel sphere = load_fixture("procedural:fine-sphere");
+    REQUIRE(sphere.model);
+    CHECK_THAT(sphere.model->bounding_box_exact().size().z(), WithinAbs(50., 1e-3));
+    CHECK(sphere.model->objects.front()->volumes.front()->mesh().facets_count() > 100000);
 }
 
 TEST_CASE("a handy fixture reads the model the app offers, and a missing one names the path it looked for", "[OrcaBench][Fixtures]")
@@ -82,4 +102,22 @@ TEST_CASE("the hermetic config sets the bed, the layer change G-code and no obje
     CHECK(config.opt_serialize("nozzle_type") == "brass");
     CHECK(config.opt_serialize("retract_lift_enforce") == "All Surfaces");
     CHECK_THROWS(hermetic_config({{"no_such_key", "1"}}));
+}
+
+TEST_CASE("every fixture and config a slice in the catalog names loads", "[OrcaBench][Fixtures]")
+{
+    const TreeResources   resources;
+    std::set<std::string> loaded;
+    for (const CatalogEntry& entry : read_catalog_dir(ORCABENCH_CATALOG_DIR)) {
+        if (entry.kind != "slice")
+            continue;
+        CAPTURE(entry.name);
+        if (loaded.insert(entry.fixture).second) {
+            const FixtureModel fixture = load_fixture(entry.fixture);
+            CHECK(fixture.model);
+            CHECK(fixture.unavailable.empty());
+        }
+        CHECK_NOTHROW(hermetic_config(entry.config));
+    }
+    CHECK(loaded.size() == 8);
 }

@@ -2,6 +2,7 @@ get_filename_component(_TEST_NAME ${CMAKE_CURRENT_LIST_DIR} NAME)
 
 add_executable(${_TEST_NAME}_tests
     test_buildid.cpp
+    test_catalog.cpp
     test_compare.cpp
     test_document.cpp
     test_host.cpp
@@ -46,7 +47,8 @@ orcaslicer_discover_tests(${_TEST_NAME}_slicer_tests PROPERTIES TIMEOUT 300)
 # run_orca_bench.cmake checks its exit code as well as its output.
 set(_run_orca_bench "${CMAKE_CURRENT_SOURCE_DIR}/run_orca_bench.cmake")
 add_test(NAME orca_bench_lists_the_catalog
-         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:orca_bench> -DARGS=--list -DEXIT=0 -P ${_run_orca_bench})
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:orca_bench> -DARGS=--list -DEXIT=0 -DOUTPUT=slice/smoke-cube/standard
+                 -P ${_run_orca_bench})
 add_test(NAME orca_bench_refuses_an_unknown_argument
          COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:orca_bench> -DARGS=--bogus -DEXIT=2
                  "-DOUTPUT=unknown argument '--bogus'" -P ${_run_orca_bench})
