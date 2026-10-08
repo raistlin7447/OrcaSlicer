@@ -1283,11 +1283,17 @@ endif ()
 
 # The commit header the slicer and the benchmarks both include.
 set(ORCA_GIT_COMMIT_HASH_DIR "${CMAKE_BINARY_DIR}/git_commit_hash")
+set(_git_commit_hash_globbed)
+if (ORCA_BENCHMARKS)
+    # orca_bench compiles its kinds by glob, so an untracked one makes the build dirty too.
+    set(_git_commit_hash_globbed "-DGLOBBED_DIRS=benchmarks/kinds")
+endif ()
 add_custom_target(git_commit_hash_header
     BYPRODUCTS "${ORCA_GIT_COMMIT_HASH_DIR}/git_commit_hash.h"
     COMMAND ${CMAKE_COMMAND}
         "-DSOURCE_DIR=${CMAKE_SOURCE_DIR}"
         "-DOUT_FILE=${ORCA_GIT_COMMIT_HASH_DIR}/git_commit_hash.h"
+        ${_git_commit_hash_globbed}
         -P "${CMAKE_SOURCE_DIR}/cmake/modules/GitCommitHash.cmake"
     COMMENT "Resolving the git commit hash")
 

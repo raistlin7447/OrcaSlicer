@@ -8,10 +8,11 @@ change that makes slicing slower shows up along with the step that got slower.
 
 ## Where it lives
 
-`benchmarks/` builds `orcabench_core`, a static library that never links libslic3r, so the
-library and its tests in `tests/orcabench` build without the slicer. It is built when
-`ORCA_BENCHMARKS` is on, which follows `BUILD_TESTS` by default, so every test build compiles it
-and runs its suite. Turning the option off removes it.
+`benchmarks/` builds `orcabench_core`, a static library that never links libslic3r, and the
+`orca_bench` command line on top of it, so both and the tests in `tests/orcabench` build without
+the slicer. It is built when `ORCA_BENCHMARKS` is on, which defaults to `BUILD_TESTS` in a new build
+directory and which the build scripts turn on with the tests, so their test builds compile it and
+run its suite. Turning the option off removes it.
 
 ## Step timestamps
 
@@ -86,15 +87,53 @@ explicitly left out. Threads are recorded as the resolved count, and an empty se
 corpus and the affinity are recorded as `embedded,handy` and `none`, the only values they have so
 far, so the results taken now stay comparable once either can vary.
 
+## The extension seam
+
+A workload kind is code and a catalog entry is data, so one kind runs many benchmarks. A
+`CatalogEntry` names a benchmark permanently, since results are keyed by its name, and holds its
+kind, its fixture, its tier, whether PGO training may run it, its tags, and the config the kind
+applies over its defaults. PGO training may run a macro entry and not a micro one unless the entry
+says otherwise. A name has to be printable ASCII without spaces, so a listing holds one name per
+line, and building a workload refuses any other.
+
+`Workload` is what a kind implements. `setup()` runs once and returns a reason when the workload
+has to be skipped, such as a missing fixture. `prepare()` builds fresh state before each
+iteration, so no iteration inherits another's, and `execute()` runs one timed iteration. An
+exception from any of them fails the workload. `RunContext` tells a workload which stages to
+time, and whatever a timed stage needs runs untimed in `prepare()`.
+
+A workload reports through `Measurement`. It takes spans with their stage, `Scope` (the whole
+print or one object) and times, each with its own metrics, then metrics of the whole iteration,
+and the work stats and the output hash once each. The tests' fake writes through the same type,
+so nothing between a workload and its result depends on slicing. A span that ends before it
+starts, a number that is not finite and a metric reported twice are refused where they are
+reported, so one bad value fails only its own workload and never reaches the document writer,
+which would refuse the whole result.
+
+`WorkloadKinds` maps kind names to the factories that build a workload from its entry. A kind
+adds itself from its own file through a `WorkloadKindRegistrar`, and the kinds compile into
+`orca_bench` itself, since a static library's linker drops registrars that nothing references.
+The process-wide registry is a function-local static, so a registrar reaches it during static
+initialization in any order, and tests give a registrar their own registry. An exception cannot
+leave a static initializer without ending the process, so a registrar keeps a failed registration,
+such as a kind added twice, for `require_registered()`, which `orca_bench` calls before anything
+else.
+
+`orca_bench` reads its arguments with a parser that shares one table of flags with the usage
+text, prints the catalog's workloads with `--list`, and prints the usage for `--help`, even beside
+`--list`. An argument it does not know exits 2 with the usage, and any other error exits 1
+without it.
+
 ## Build identity
 
 `BuildId.cpp` reports the commit and whether the working copy was dirty, read from
 `git_commit_hash.h`, which `cmake/modules/GitCommitHash.cmake` rewrites at the start of every build
-for the slicer and the benchmarks alike. The compiler, its version, the configuration and the
-flags are read from a header CMake generates per configuration. The flags are `CMAKE_CXX_FLAGS`, the
-configuration's own, and the `add_compile_options` the directory inherits, so a cache option such
-as `SLIC3R_ASAN` shows up in them. `BuildId.cpp` is the only file in `benchmarks/` that includes
-either generated header, so a new commit recompiles one file there.
+for the slicer and the benchmarks alike. Dirty means a tracked file changed or, since `orca_bench`
+compiles its kinds by glob, a kind exists that git does not track yet. The compiler, its version,
+the configuration and the flags are read from a header CMake generates per configuration. The
+flags are `CMAKE_CXX_FLAGS`, the configuration's own, and the `add_compile_options` the directory
+inherits, so a cache option such as `SLIC3R_ASAN` shows up in them. `BuildId.cpp` is the only file
+in `benchmarks/` that includes either generated header, so a new commit recompiles one file there.
 
 ## The result document
 
