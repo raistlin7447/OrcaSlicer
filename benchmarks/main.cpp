@@ -1,9 +1,11 @@
 #include "core/Compare.hpp"
 #include "core/Document.hpp"
+#include "core/Host.hpp"
 #include "core/Options.hpp"
 #include "core/Reporters.hpp"
 #include "core/Workload.hpp"
 
+#include <cstdlib>
 #include <exception>
 #include <iostream>
 #include <vector>
@@ -12,15 +14,17 @@ using namespace Slic3r::Bench;
 
 namespace {
 
-// Prints the comparison of two result documents, and returns 3 when a workload's output changed.
-int compare_files(const CompareFiles& files, bool allow_mismatch)
+// Prints the comparison of the two result documents the options name, and returns 3 when a workload's
+// output changed.
+int compare_files(const Options& options)
 {
-    const Result     a          = read_document_file(files.a);
-    const Result     b          = read_document_file(files.b);
-    const Comparison comparison = compare(a, b, {allow_mismatch});
+    const Result     a          = read_document_file(options.compare->a);
+    const Result     b          = read_document_file(options.compare->b);
+    const Comparison comparison = compare(a, b, {options.allow_mismatch});
     CompareView      view;
-    view.label_a = files.a;
-    view.label_b = files.b;
+    view.label_a = options.compare->a;
+    view.label_b = options.compare->b;
+    view.color   = use_color(options.color, enable_terminal_escapes(), std::getenv("NO_COLOR"), std::getenv("TERM"));
     write_comparison(std::cout, comparison, view);
     return comparison.changed_outputs > 0 ? 3 : 0;
 }
@@ -37,7 +41,7 @@ int main(int argc, char** argv)
             return 0;
         }
         if (options.compare)
-            return compare_files(*options.compare, options.allow_mismatch);
+            return compare_files(options);
         if (options.list) {
             // No catalog file is read, so there is nothing to list.
             const std::vector<CatalogEntry> catalog;

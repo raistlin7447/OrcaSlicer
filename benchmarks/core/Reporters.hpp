@@ -23,6 +23,8 @@ struct ReportOptions
     double collapse_below = collapse_share;
     bool   verbose        = false;
     SortBy sort_by        = SortBy::Time;
+    // Colors what needs attention with escape sequences, which only a terminal shows.
+    bool   color          = false;
 };
 
 // Turns a run into what orca_bench prints, fed the identities before the first workload, each
@@ -81,6 +83,8 @@ struct CompareView
     std::string label_b        = "b";
     double      collapse_below = collapse_share;
     SortBy      sort_by        = SortBy::Time;
+    // Colors what needs attention with escape sequences, which only a terminal shows.
+    bool        color          = false;
 };
 
 // Writes changed output first, then a summary of the walls, then a table per workload and the

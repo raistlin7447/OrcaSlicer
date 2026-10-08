@@ -225,4 +225,18 @@ std::chrono::nanoseconds cpu_time_step()
 #endif
 }
 
+bool enable_terminal_escapes()
+{
+#ifdef _WIN32
+    // GetConsoleMode fails for a file or a pipe, which is also what mintty gives a Windows program.
+    const HANDLE out  = GetStdHandle(STD_OUTPUT_HANDLE);
+    DWORD        mode = 0;
+    if (!GetConsoleMode(out, &mode))
+        return false;
+    return (mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING) != 0 || SetConsoleMode(out, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING) != 0;
+#else
+    return isatty(STDOUT_FILENO) == 1;
+#endif
+}
+
 }} // namespace Slic3r::Bench

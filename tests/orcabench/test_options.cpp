@@ -85,9 +85,35 @@ TEST_CASE("an unknown argument is refused", "[OrcaBench][Options]")
 TEST_CASE("the usage lists each option with its values, then the exit statuses", "[OrcaBench][Options]")
 {
     CHECK(usage() == "usage: orca_bench [options]\n"
-                     "  --list                   print the catalog's workloads\n"
-                     "  --compare a.json b.json  compare result a, from before a change, with result b, from after it\n"
-                     "  --allow-mismatch         compare results that measured differently\n"
-                     "  --help                   print this text\n"
+                     "  --list                     print the catalog's workloads\n"
+                     "  --compare a.json b.json    compare result a, from before a change, with result b, from after it\n"
+                     "  --allow-mismatch           compare results that measured differently\n"
+                     "  --color auto|always|never  color the output, auto for a terminal unless TERM=dumb or NO_COLOR is non-empty\n"
+                     "  --help                     print this text\n"
                      "exit status: 0 done, 1 error, 2 bad command line, 3 --compare found changed output\n");
+}
+
+TEST_CASE("the color flag says when to color the output", "[OrcaBench][Options]")
+{
+    CHECK(parse_options({}).color == ColorChoice::Auto);
+    CHECK(parse_options({"--color", "always"}).color == ColorChoice::Always);
+    CHECK(parse_options({"--color", "never"}).color == ColorChoice::Never);
+    CHECK(parse_options({"--color", "auto"}).color == ColorChoice::Auto);
+    CHECK_THROWS_WITH(parse_options({"--color", "sometimes"}), "--color needs auto|always|never, not 'sometimes'");
+    CHECK_THROWS_WITH(parse_options({"--color"}), "--color needs auto|always|never");
+}
+
+TEST_CASE("auto colors a terminal unless NO_COLOR holds something or TERM is dumb, and always and never decide alone",
+          "[OrcaBench][Options]")
+{
+    const auto [choice, terminal, no_color, term, colored] = GENERATE(table<ColorChoice, bool, const char*, const char*, bool>({
+        {ColorChoice::Auto, true, nullptr, nullptr, true},
+        {ColorChoice::Auto, true, "", "xterm-256color", true},
+        {ColorChoice::Auto, true, "1", nullptr, false},
+        {ColorChoice::Auto, true, nullptr, "dumb", false},
+        {ColorChoice::Auto, false, nullptr, nullptr, false},
+        {ColorChoice::Always, false, "1", "dumb", true},
+        {ColorChoice::Never, true, nullptr, nullptr, false},
+    }));
+    CHECK(use_color(choice, terminal, no_color, term) == colored);
 }
