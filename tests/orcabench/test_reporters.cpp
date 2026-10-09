@@ -269,6 +269,23 @@ TEST_CASE("a workload with no timed passes shows only what it recorded", "[OrcaB
                                            "2 ran, 0 skipped, 0 failed   6.1s\n");
 }
 
+TEST_CASE("a run that collects the hash says when a workload produced none", "[OrcaBench][Reporters]")
+{
+    Result result                               = canned();
+    result.measurement[MeasurementKey::metrics] = "wall,rss,hash";
+    result.workloads = {WorkloadResult::ran("slice/extruder-idler/standard-0.20", 0x3bbecdbaa64c8fe8, std::nullopt, {}),
+                        WorkloadResult::ran("slice/benchy/standard-0.20", std::nullopt, std::nullopt, {})};
+    CHECK(render("console", result) == std::string(canned_header) +
+                                           "\n"
+                                           "slice/extruder-idler/standard-0.20\n"
+                                           "  hash 3bbecdba\n"
+                                           "\n"
+                                           "slice/benchy/standard-0.20\n"
+                                           "  hash none\n"
+                                           "\n"
+                                           "2 ran, 0 skipped, 0 failed   6.1s\n");
+}
+
 TEST_CASE("a workload whose passes took no time shows no unaccounted share", "[OrcaBench][Reporters]")
 {
     Result result    = canned();

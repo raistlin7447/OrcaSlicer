@@ -30,42 +30,39 @@ int compare_files(const Options& options)
 {
     const Result     a          = read_document_file(options.compare->a);
     const Result     b          = read_document_file(options.compare->b);
-    const Comparison comparison = compare(a, b, {options.allow_mismatch});
+    const Comparison comparison = compare(a, b, {options.allow_mismatch, options.verbose});
     CompareView      view;
-    view.label_a = options.compare->a;
-    view.label_b = options.compare->b;
-    view.color   = use_color(options.color, enable_terminal_escapes(), std::getenv("NO_COLOR"), std::getenv("TERM"));
+    view.label_a        = options.compare->a;
+    view.label_b        = options.compare->b;
+    view.collapse_below = options.collapse_below.value_or(view.collapse_below);
+    view.sort_by        = options.sort_by.value_or(view.sort_by);
+    view.color          = use_color(options.color, enable_terminal_escapes(), std::getenv("NO_COLOR"), std::getenv("TERM"));
     write_comparison(std::cout, comparison, view);
     return comparison.changed_outputs > 0 ? 3 : 0;
 }
 
-// The catalog's workloads, or those the options' filter matches, throwing when it matches none.
 std::vector<CatalogEntry> selected(const Options& options)
 {
-    std::vector<CatalogEntry> catalog = read_catalog_dir(ORCABENCH_CATALOG_DIR);
-    if (!options.filter)
-        return catalog;
-    std::vector<CatalogEntry> matched;
-    std::copy_if(catalog.begin(), catalog.end(), std::back_inserter(matched),
-                 [&options](const CatalogEntry& entry) { return matches(*options.filter, entry.name); });
-    if (matched.empty())
-        throw std::runtime_error("no workload in the catalog matches '" + *options.filter + "'");
-    return matched;
+    return select_entries(read_catalog_dir(ORCABENCH_CATALOG_DIR), options.selection);
 }
 
 // Runs the selected workloads under the options' policy, printing each as it finishes, writes the result
 // where the options ask, and returns 1 when a workload failed.
 int run_catalog(const Options& options)
 {
-    const Policy                    policy  = Policy::resolve(*options.policy, {}, hardware_threads());
+    const Policy                    policy  = Policy::resolve(*options.policy, options.overrides, hardware_threads());
     const std::vector<CatalogEntry> catalog = selected(options);
     ReportOptions                   report;
-    report.color = use_color(options.color, enable_terminal_escapes(), std::getenv("NO_COLOR"), std::getenv("TERM"));
-    const std::unique_ptr<Reporter> console = make_reporter("console", std::cout, report);
+    report.verbose        = options.verbose;
+    report.collapse_below = options.collapse_below.value_or(report.collapse_below);
+    report.sort_by        = options.sort_by.value_or(report.sort_by);
+    report.color          = use_color(options.color, enable_terminal_escapes(), std::getenv("NO_COLOR"), std::getenv("TERM"));
+    const std::unique_ptr<Reporter> reporter = make_reporter(options.reporter.value_or("console"), std::cout, report);
     Progress                        progress(std::cerr, error_is_terminal());
     SlicerEnvironment               environment(ORCABENCH_RESOURCES_DIR);
-    const RunEvents                 events = report_events(*console, &progress);
-    const Result                    result = run_suite(catalog, policy, WorkloadKinds::instance(), environment, host_reading, events);
+    const RunEvents                 events = report_events(*reporter, options.quiet ? nullptr : &progress);
+    const Result                    result = run_suite(catalog, policy, WorkloadKinds::instance(), environment, host_reading, events,
+                                                       options.dump_gcode.value_or(""));
     if (options.out) {
         std::ofstream file(*options.out, std::ios::binary);
         file << write_document(result);

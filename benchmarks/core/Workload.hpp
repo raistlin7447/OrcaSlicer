@@ -61,7 +61,9 @@ bool matches(std::string_view pattern, std::string_view name);
 struct RunContext
 {
     // The stages to time, where whatever a timed stage needs runs untimed in prepare().
-    StageSet timed;
+    StageSet    timed;
+    // Where a kind keeps each pass's output for a person to read, or empty to keep none.
+    std::string dump_dir;
 };
 
 // One benchmark's code, driven through setup() once, then prepare() and execute() for every

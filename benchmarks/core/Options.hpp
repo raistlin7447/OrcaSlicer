@@ -1,5 +1,9 @@
 #pragma once
 
+#include "core/Catalog.hpp"
+#include "core/Policy.hpp"
+#include "core/Reporters.hpp"
+
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -31,11 +35,22 @@ struct Options
     bool                        help = false;
     bool                        list = false;
     std::optional<std::string>  policy;
-    std::optional<std::string>  filter;
+    PolicyOverrides             overrides;
+    Selection                   selection;
     std::optional<std::string>  out;
     std::optional<CompareFiles> compare;
     bool                        allow_mismatch = false;
-    ColorChoice                 color          = ColorChoice::Auto;
+    // The reporter a run prints through, console unless set.
+    std::optional<std::string>  reporter;
+    // The layout of a run's console and of a comparison, where unset keeps the reporter's.
+    bool                        verbose = false;
+    std::optional<double>       collapse_below;
+    std::optional<SortBy>       sort_by;
+    bool                        quiet             = false;
+    ColorChoice                 color             = ColorChoice::Auto;
+    bool                        check_determinism = false;
+    // Where a run keeps each pass's G-code.
+    std::optional<std::string>  dump_gcode;
 };
 
 // The arguments after the program name, and none when argc is 0, which an exec with an empty argv

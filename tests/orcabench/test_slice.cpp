@@ -7,6 +7,7 @@
 #include "core/Policy.hpp"
 #include "core/Result.hpp"
 #include "core/Runner.hpp"
+#include "core/Sampler.hpp"
 #include "core/Workload.hpp"
 #include "slicer/Environment.hpp"
 #include "slicer/Output.hpp"
@@ -17,6 +18,8 @@
 #include "libslic3r/GCode/GCodeProcessor.hpp"
 #include "libslic3r/libslic3r.h"
 
+#include <boost/filesystem/directory.hpp>
+#include <boost/filesystem/operations.hpp>
 #include <boost/filesystem/path.hpp>
 
 #include <cstdint>
@@ -227,4 +230,32 @@ TEST_CASE("the work stats count the processor's moves by kind, layer and extrusi
     CHECK_THAT(work.metrics.at("extrusion_mm3.perimeter"), WithinRel(2 * PI, 1e-6));
     CHECK_THAT(work.metrics.at("extrusion_mm3.support"), WithinRel(2 * PI, 1e-6));
     CHECK(work.metrics.size() == 4);
+}
+
+TEST_CASE("a slice keeps each pass's G-code in the dump directory, numbered from the first pass", "[OrcaBench][Slice]")
+{
+    const ScopedTemporaryDir dump("orcabench");
+    SlicerEnvironment        environment(ORCABENCH_RESOURCES_DIR);
+    const Result result = run_suite({smoke_cube()}, timing({Stage::Process, Stage::Export}, 2), WorkloadKinds::instance(), environment,
+                                    host_reading, {}, dump.string());
+    REQUIRE(result.workloads.size() == 1);
+    CAPTURE(result.workloads.front().reason);
+    REQUIRE(result.workloads.front().outcome == Outcome::Ran);
+    const boost::filesystem::path kept = dump.path() / "slice" / "smoke-cube" / "test";
+    std::set<std::string>         files;
+    for (const auto& entry : boost::filesystem::directory_iterator(kept))
+        files.insert(entry.path().filename().string());
+    CHECK(files == std::set<std::string> {"1.gcode", "2.gcode"});
+    CHECK(gcode_hash((kept / "1.gcode").string()) == *result.workloads.front().output_hash);
+}
+
+TEST_CASE("a slice that exports nothing keeps nothing in the dump directory", "[OrcaBench][Slice]")
+{
+    const ScopedTemporaryDir dump("orcabench");
+    SlicerEnvironment        environment(ORCABENCH_RESOURCES_DIR);
+    const Result result = run_suite({smoke_cube()}, timing({Stage::Process}, 1), WorkloadKinds::instance(), environment, host_reading, {},
+                                    dump.string());
+    REQUIRE(result.workloads.size() == 1);
+    CHECK(result.workloads.front().outcome == Outcome::Ran);
+    CHECK(boost::filesystem::is_empty(dump.path()));
 }

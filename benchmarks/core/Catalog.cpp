@@ -129,4 +129,23 @@ std::vector<CatalogEntry> read_catalog_dir(const std::string& directory)
     return catalog;
 }
 
+std::vector<CatalogEntry> select_entries(const std::vector<CatalogEntry>& catalog, const Selection& selection)
+{
+    std::vector<CatalogEntry> selected;
+    std::copy_if(catalog.begin(), catalog.end(), std::back_inserter(selected), [&selection](const CatalogEntry& entry) {
+        return (!selection.filter || matches(*selection.filter, entry.name)) &&
+               (!selection.exclude || !matches(*selection.exclude, entry.name)) && (!selection.kind || entry.kind == *selection.kind) &&
+               (!selection.tag || entry.tags.count(*selection.tag) != 0);
+    });
+    if (selected.empty()) {
+        std::string asked;
+        for (const auto& [flag, value] : {std::pair {"--filter", selection.filter}, std::pair {"--exclude", selection.exclude},
+                                          std::pair {"--kind", selection.kind}, std::pair {"--tag", selection.tag}})
+            if (value)
+                asked += std::string(asked.empty() ? "" : " ") + flag + " '" + *value + "'";
+        throw CatalogError(asked.empty() ? "the catalog has no workloads" : "no workload in the catalog matches " + asked);
+    }
+    return selected;
+}
+
 }} // namespace Slic3r::Bench

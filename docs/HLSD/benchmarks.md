@@ -400,13 +400,22 @@ handy models that read in a few milliseconds are left out, since a step that sho
 Names follow `load/<fixture>/<format>`.
 
 `orca_bench --policy <name>` runs the catalog under that policy, at the thread count TBB runs
-without a cap, which follows the process's affinity. `--filter` takes only the workloads whose names
-match its pattern, where `*` stands for any text, for a listing as well as a run, and a pattern that
-matches nothing is an error, since a run of nothing would look like a pass. `--out` writes the
-result document `--compare` reads. The console prints each workload's table as it finishes, and the
-progress line redraws in place when standard error is a terminal and prints a line per workload
-otherwise. A run exits 1 when a workload failed, after printing every one, and an unknown policy
-exits 2, as any bad command line does.
+without a cap, which follows the process's affinity. `--iterations`, `--warmup`, `--threads` and
+`--stages` replace the preset's values, so the run's identity records what it did, and each needs
+`--policy`. A count is a whole number. `--filter` takes only the workloads whose names match its
+pattern, where `*` stands for any text, `--exclude` leaves out the names its pattern matches, and
+`--kind` and `--tag` take the workloads of one kind or with one tag. A workload must meet all of
+them, for a listing as well as a run, and a selection that takes nothing is an error naming each
+flag, since a run of nothing would look like a pass. A slice timed without export writes no G-code,
+so when the run still collects the hash, because it times load, the console shows `hash none` for
+it. `--out` writes the result document `--compare` reads. The console prints each workload's table
+as it finishes, and the progress line redraws in place when standard error is a terminal and prints
+a line per workload otherwise. `--reporter` picks the console, `json` or `null` for standard output,
+`--verbose`, `--collapse-below` and `--sort-by` set the console's layout, and `--quiet` drops the
+progress line. `--check-determinism` is the verify preset at two passes, so a workload whose second
+pass hashes differently fails, and `--dump-gcode <dir>` keeps every pass's G-code there, as
+`<workload>/<pass>.gcode`, for diffing. A run exits 1 when a workload failed, after printing every
+one, and an unknown policy exits 2, as any bad command line does.
 
 ## Tests
 

@@ -28,8 +28,10 @@ public:
 // warmup and timed pass, where a workload that throws, or whose pass differs from its first, fails
 // with a reason and the run goes on. Throws WorkloadError before entering the environment for an
 // entry name that validate() refuses or that repeats, since results are keyed by name. The probe reads
-// the process, through Host unless a test scripts it.
+// the process, through Host unless a test scripts it, and a dump directory, when given, reaches each kind
+// through RunContext.
 Result run_suite(const std::vector<CatalogEntry>& entries, const Policy& policy, const WorkloadKinds& kinds,
-                 RunEnvironment& environment, const ProcessProbe& probe = host_reading, const RunEvents& events = {});
+                 RunEnvironment& environment, const ProcessProbe& probe = host_reading, const RunEvents& events = {},
+                 const std::string& dump_dir = {});
 
 }} // namespace Slic3r::Bench

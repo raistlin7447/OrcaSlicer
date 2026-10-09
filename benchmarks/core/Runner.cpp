@@ -202,7 +202,7 @@ WorkloadResult run_workload(const CatalogEntry& entry, const Policy& policy, con
 } // namespace
 
 Result run_suite(const std::vector<CatalogEntry>& entries, const Policy& policy, const WorkloadKinds& kinds,
-                 RunEnvironment& environment, const ProcessProbe& probe, const RunEvents& events)
+                 RunEnvironment& environment, const ProcessProbe& probe, const RunEvents& events, const std::string& dump_dir)
 {
     std::set<std::string> names;
     for (const CatalogEntry& entry : entries) {
@@ -219,7 +219,8 @@ Result run_suite(const std::vector<CatalogEntry>& entries, const Policy& policy,
     result.machine                     = this_machine();
 
     RunContext context;
-    context.timed = policy.stages;
+    context.timed    = policy.stages;
+    context.dump_dir = dump_dir;
     std::vector<const CatalogEntry*> admitted;
     for (const CatalogEntry& entry : entries)
         if (!policy.pgo_eligible_only || is_pgo_eligible(entry))

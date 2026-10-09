@@ -147,6 +147,17 @@ bool unoptimized(const std::string& flags)
     return level == "/Od" || level == "-O0";
 }
 
+// Whether the run's measurement lists the metric among those it collects.
+bool collects(const Properties& measurement, std::string_view metric)
+{
+    std::istringstream metrics(label(measurement, MeasurementKey::metrics));
+    std::string        name;
+    while (std::getline(metrics, name, ','))
+        if (name == metric)
+            return true;
+    return false;
+}
+
 class ConsoleReporter : public Reporter
 {
 public:
@@ -235,6 +246,8 @@ private:
         }
         if (workload.output_hash)
             footer.push_back("hash " + short_hash(*workload.output_hash));
+        else if (collects(m_header.measurement, "hash"))
+            footer.push_back("hash none");
         std::string line;
         for (const std::string& part : footer)
             line += (line.empty() ? "  " : "   ") + part;

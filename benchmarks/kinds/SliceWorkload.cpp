@@ -112,6 +112,12 @@ public:
         if (timed(context, Stage::Export)) {
             measurement.output_hash(gcode_hash(m_gcode));
             measurement.work(work_of(result, boost::filesystem::file_size(m_gcode)));
+            if (!context.dump_dir.empty()) {
+                const boost::filesystem::path kept =
+                    boost::filesystem::path(context.dump_dir) / m_entry.name / (std::to_string(++m_dumped) + ".gcode");
+                boost::filesystem::create_directories(kept.parent_path());
+                boost::filesystem::copy_file(m_gcode, kept, boost::filesystem::copy_options::overwrite_existing);
+            }
             boost::filesystem::remove(m_gcode);
         }
     }
@@ -121,6 +127,8 @@ private:
     Model                  m_model;
     DynamicPrintConfig     m_config;
     std::string            m_gcode;
+    // The passes whose G-code went to the dump directory, counted from the first warmup.
+    unsigned               m_dumped = 0;
     std::unique_ptr<Print> m_print;
 };
 

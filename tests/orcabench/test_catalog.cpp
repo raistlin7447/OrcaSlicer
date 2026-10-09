@@ -134,3 +134,34 @@ TEST_CASE("the slicing catalog names five handy models under four configurations
             expected[std::string("slice/") + model + "/" + variant] = config;
     CHECK(configs == expected);
 }
+
+TEST_CASE("a selection takes the entries that meet all its fields, in catalog order", "[OrcaBench][Catalog]")
+{
+    const std::vector<CatalogEntry> catalog = read_catalog(R"({"entries": [
+        {"name": "slice/cube/plain", "kind": "slice", "tags": ["procedural"]},
+        {"name": "slice/benchy/plain", "kind": "slice", "tags": ["handy"]},
+        {"name": "load/benchy/drc", "kind": "load", "tags": ["handy"]},
+        {"name": "load/cube/stl", "kind": "load", "tags": ["procedural"]}]})");
+    const auto [selection, names] = GENERATE(table<Selection, std::vector<std::string>>({
+        {{}, {"slice/cube/plain", "slice/benchy/plain", "load/benchy/drc", "load/cube/stl"}},
+        {{std::string("slice/*")}, {"slice/cube/plain", "slice/benchy/plain"}},
+        {{std::nullopt, std::string("*/cube/*")}, {"slice/benchy/plain", "load/benchy/drc"}},
+        {{std::nullopt, std::nullopt, std::string("load")}, {"load/benchy/drc", "load/cube/stl"}},
+        {{std::nullopt, std::nullopt, std::nullopt, std::string("handy")}, {"slice/benchy/plain", "load/benchy/drc"}},
+        {{std::string("*/benchy/*"), std::nullopt, std::string("load"), std::string("handy")}, {"load/benchy/drc"}},
+    }));
+    std::vector<std::string> selected;
+    for (const CatalogEntry& entry : select_entries(catalog, selection))
+        selected.push_back(entry.name);
+    CHECK(selected == names);
+}
+
+TEST_CASE("a selection that takes nothing is refused, naming each field it set", "[OrcaBench][Catalog]")
+{
+    const std::vector<CatalogEntry> catalog = read_catalog(R"({"entries": [{"name": "slice/cube/plain", "kind": "slice"}]})");
+    CHECK_THROWS_WITH(select_entries(catalog, {std::string("load/*")}), "no workload in the catalog matches --filter 'load/*'");
+    const Selection every_field {std::string("slice/*"), std::string("*/cube/*"), std::string("slice"), std::string("handy")};
+    CHECK_THROWS_WITH(select_entries(catalog, every_field),
+                      "no workload in the catalog matches --filter 'slice/*' --exclude '*/cube/*' --kind 'slice' --tag 'handy'");
+    CHECK_THROWS_WITH(select_entries({}, {}), "the catalog has no workloads");
+}
