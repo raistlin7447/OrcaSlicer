@@ -68,22 +68,25 @@ profile training run. Four presets cover the framework's uses.
 
 | Preset    | Threads  | Warmup | Iterations | Collects              | Stages                |
 | --------- | -------- | -----: | ---------: | --------------------- | --------------------- |
-| `quick`   | hardware |      1 |          3 | wall, rss, hash, work | process, export       |
-| `precise` | 1        |      2 |         10 | wall, rss, hash, work | process, export       |
-| `verify`  | hardware |      0 |          1 | hash                  | process, export       |
+| `quick`   | hardware |      1 |          3 | wall, rss, hash, work | load, process, export |
+| `precise` | 1        |      2 |         10 | wall, rss, hash, work | load, process, export |
+| `verify`  | hardware |      0 |          1 | hash                  | load, process, export |
 | `pgo`     | hardware |      0 |          1 | none                  | load, process, export |
 
 `quick` is the edit loop. `precise` runs one thread, where the slicing itself takes the largest
 share of the wall time and runs vary least, and its numbers are therefore never comparable with
 `quick`'s. `verify` exists for the output hash. `pgo` runs each workload exactly once for profile
-coverage, and fixes its warmup and iteration counts.
+coverage, and fixes its warmup and iteration counts. Every preset times all three stages, since a
+kind times only the stages it has: a slice times nothing under load, and a load nothing under
+process or export.
 
 `PolicyOverrides` replaces a preset's values field by field, so a run can be `precise` with four
 threads. `Policy::resolve()` applies them, turns 0 threads into the hardware count, and refuses an
 unknown preset, more threads than the hardware runs, a run without iterations or stages, and a
-warmup or iteration count on a preset that fixes them. Only export writes G-code, and the hash and
-the work stats both come from it, so a run whose stages leave export out drops both from what it
-collects, and one left collecting nothing, which is `verify` without export, is refused.
+warmup or iteration count on a preset that fixes them. The work stats come from the G-code export
+writes, and a hash from that G-code or from the file load reads, so a run whose stages leave export
+out drops the work stats, one that also leaves load out drops the hash, and one left collecting
+nothing, which is `verify` with neither, is refused.
 
 `Policy::identity()` is the only writer of the measurement identity. It names every field of
 `Policy` in a structured binding, so a new field does not compile until it is recorded or
@@ -347,14 +350,19 @@ against the export that wrote the file.
 
 `benchmarks/slicer/Fixtures.cpp` resolves fixtures and builds the hermetic config. `handy:<file>` is
 one of the models the app offers under `resources_dir()`'s `handy_models`, and a missing one skips
-the workload with the path it looked for, while `procedural:<shape>` is built in code. Each is
-centered on a 350 mm bed and set down on it. The hermetic config is the full default print config on
-that bed, with `G92 E0` as the layer change G-code, which `validate()` requires with the default
-relative extrusion, and object labels off, since their comments print an object id that only the
-cancel-object feature sets, which otherwise differs between passes. The entry's keys go on top, and
-one the slicer does not know fails the workload, since the config's strict setter only records an
-unknown key. The defaults are applied option by option, so each enum list keeps the names it reads
-and writes, which the copies `full_print_config()` makes lack.
+the workload with the path it looked for, while `procedural:<shape>` is built in code. A handy 3MF
+is read with `LoadStrategy::LoadModel`, without which it has no objects, and `fixture_path()` names
+the file a handy fixture is read from, for a kind that times the reading itself. A 3MF read also
+makes a backup folder for the model. The folder is deleted right after the read, because otherwise
+the model's destructor starts libslic3r's backup thread to delete it, and that thread can deadlock
+the process's exit. Every fixture is centered on a 350 mm bed and set down on it. The hermetic
+config is the full default print config on that bed, with `G92 E0` as the layer change G-code, which
+`validate()` requires with the default relative extrusion, and object labels off, since their
+comments print an object id that only the cancel-object feature sets, which otherwise differs
+between passes. The entry's keys go on top, and one the slicer does not know fails the workload,
+since the config's strict setter only records an unknown key. The defaults are applied option by
+option, so each enum list keeps the names it reads and writes, which the copies
+`full_print_config()` makes lack.
 
 Catalogs live in `benchmarks/catalog/`, and `core/Catalog.cpp` reads every `.json` file there as one
 catalog, in file name order, so a new kind's catalog is found without code. A catalog is an object

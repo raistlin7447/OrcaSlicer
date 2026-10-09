@@ -9,14 +9,22 @@
 #include "core/Workload.hpp"
 #include "slicer/Fixtures.hpp"
 
+#include "test_utils.hpp"
+
 #include "libslic3r/BoundingBox.hpp"
 #include "libslic3r/Point.hpp"
 #include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/Utils.hpp"
 
+#include <boost/filesystem/directory.hpp>
+#include <boost/filesystem/file_status.hpp>
+#include <boost/filesystem/operations.hpp>
+
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 using namespace Slic3r;
 using namespace Slic3r::Bench;
@@ -78,9 +86,38 @@ TEST_CASE("a handy fixture reads the model the app offers, and a missing one nam
     CHECK_FALSE(voron.model->objects.empty());
     CHECK(voron.unavailable.empty());
 
+    const FixtureModel badge = load_fixture("handy:OrcaBadge.3mf");
+    REQUIRE(badge.model);
+    CHECK(badge.model->objects.size() == 3);
+
     const FixtureModel missing = load_fixture("handy:missing.drc");
     CHECK_FALSE(missing.model);
     CHECK_THAT(missing.unavailable, EndsWith("missing.drc is missing"));
+}
+
+TEST_CASE("a 3MF fixture keeps no backup folder", "[OrcaBench][Fixtures]")
+{
+    const TreeResources            resources;
+    const ScopedSlic3rTemporaryDir temporary("orcabench");
+    const FixtureModel             badge = load_fixture("handy:OrcaBadge.3mf");
+    REQUIRE(badge.model);
+    std::vector<std::string> files;
+    for (const auto& entry : boost::filesystem::recursive_directory_iterator(temporary.path()))
+        if (boost::filesystem::is_regular_file(entry.status()))
+            files.push_back(entry.path().string());
+    CHECK(files.empty());
+}
+
+TEST_CASE("a handy fixture's file is the model under handy_models, and a procedural fixture has none", "[OrcaBench][Fixtures]")
+{
+    const TreeResources              resources;
+    const std::optional<std::string> benchy = fixture_path("handy:3DBenchy.drc");
+    REQUIRE(benchy);
+    CHECK(boost::filesystem::exists(*benchy));
+    CHECK(boost::filesystem::path(*benchy).filename() == "3DBenchy.drc");
+    CHECK(boost::filesystem::path(*benchy).parent_path().filename() == "handy_models");
+    CHECK_FALSE(fixture_path("procedural:smoke-cube"));
+    CHECK_THROWS_AS(fixture_path("smoke-cube"), std::invalid_argument);
 }
 
 TEST_CASE("a fixture id that names no fixture is refused", "[OrcaBench][Fixtures]")

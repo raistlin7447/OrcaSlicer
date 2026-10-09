@@ -92,7 +92,7 @@ Result sample()
                           {MeasurementKey::warmup, "1"},
                           {MeasurementKey::iterations, "3"},
                           {MeasurementKey::threads, "20"},
-                          {MeasurementKey::stages, "process,export"},
+                          {MeasurementKey::stages, "load,process,export"},
                           {MeasurementKey::metrics, "wall,rss,hash,work"},
                           {MeasurementKey::corpus, "embedded,handy"},
                           {MeasurementKey::affinity, "none"},

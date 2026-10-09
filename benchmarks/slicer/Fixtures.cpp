@@ -53,21 +53,40 @@ Model procedural(const std::string& shape)
 
 } // namespace
 
+std::optional<std::string> fixture_path(const std::string& id)
+{
+    if (starts_with(id, handy_prefix))
+        return (boost::filesystem::path(resources_dir()) / "handy_models" / id.substr(handy_prefix.size())).string();
+    if (starts_with(id, procedural_prefix))
+        return std::nullopt;
+    throw std::invalid_argument("the fixture '" + id + "' is neither handy: nor procedural:");
+}
+
+ProjectParts::~ProjectParts()
+{
+    release_PlateData_list(plates);
+    for (Preset* preset : presets)
+        delete preset;
+}
+
 FixtureModel load_fixture(const std::string& id)
 {
     FixtureModel fixture;
     Model        model;
-    if (starts_with(id, handy_prefix)) {
-        const boost::filesystem::path path = boost::filesystem::path(resources_dir()) / "handy_models" / id.substr(handy_prefix.size());
-        if (!boost::filesystem::exists(path)) {
-            fixture.unavailable = path.string() + " is missing";
+    if (const std::optional<std::string> path = fixture_path(id)) {
+        if (!boost::filesystem::exists(*path)) {
+            fixture.unavailable = *path + " is missing";
             return fixture;
         }
-        model = Model::read_from_file(path.string(), nullptr, nullptr, LoadStrategy::AddDefaultInstances);
-    } else if (starts_with(id, procedural_prefix)) {
-        model = procedural(id.substr(procedural_prefix.size()));
+        ProjectParts parts;
+        // A 3MF read without LoadModel has no objects.
+        model = Model::read_from_file(*path, nullptr, nullptr, LoadStrategy::LoadModel | LoadStrategy::AddDefaultInstances, &parts.plates,
+                                      &parts.presets);
+        // Deletes the backup folder a 3MF read makes, so the model's destructor does not start libslic3r's backup
+        // thread, which can deadlock the process's exit.
+        model.remove_backup_path_if_exist();
     } else {
-        throw std::invalid_argument("the fixture '" + id + "' is neither handy: nor procedural:");
+        model = procedural(id.substr(procedural_prefix.size()));
     }
     model.center_instances_around_point(Vec2d(bed_size / 2, bed_size / 2));
     for (ModelObject* object : model.objects)

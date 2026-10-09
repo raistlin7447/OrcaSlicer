@@ -11,7 +11,7 @@
     "metrics": "wall,rss,hash,work",
     "policy": "quick",
     "sampling": "5ms",
-    "stages": "process,export",
+    "stages": "load,process,export",
     "threads": "20",
     "warmup": "1"
   },
