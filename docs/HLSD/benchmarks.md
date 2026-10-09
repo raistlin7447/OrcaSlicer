@@ -381,6 +381,24 @@ cube small enough for the tests, a plate of 64 pegs, which gives every layer 64 
 travel between, and a sphere of about 130,000 triangles, a dense mesh to slice. Names follow
 `slice/<fixture>/<variant>` and are permanent, since results are keyed by them.
 
+`benchmarks/kinds/LoadWorkload.cpp` is the load kind. It times `Model::read_from_file()` as Load's
+one step, `read_from_file`, reading the model, a 3MF's settings, plates and embedded presets, and
+the default instances. A 3MF goes through the importer the app opens a project with, but without the
+auxiliary files and the version check the app also asks `read_from_archive()` for. The plates and
+presets are freed after the step, and the last pass's model is freed in `prepare()`, where it is not
+timed, after its 3MF backup folder is deleted as the fixtures do. The step carries the facets,
+objects and parts it read as its metrics, since the work stats describe G-code, and the hash,
+`model_hash()` beside `gcode_hash()` in `slicer/Output.cpp`, covers each part's vertices, triangles
+and placement and each instance's placement, so the names and settings a file carries do not count.
+An entry reads its fixture's own file, which a procedural fixture does not have, or, with `format`
+set to `stl` or `stl-ascii`, an STL that `setup()` writes from the fixture into the run's temporary
+directory, so one mesh can be read in several formats. Any other setting is refused.
+
+`loading.json` reads 3DBenchy as Draco, binary STL and ASCII STL, Stanford_Bunny as Draco, the two
+3MF projects the app offers, OrcaBadge and OrcaSliced, and the fine sphere as a binary STL. The
+handy models that read in a few milliseconds are left out, since a step that short is mostly noise.
+Names follow `load/<fixture>/<format>`.
+
 `orca_bench --policy <name>` runs the catalog under that policy, at the thread count TBB runs
 without a cap, which follows the process's affinity. `--filter` takes only the workloads whose names
 match its pattern, where `*` stands for any text, for a listing as well as a run, and a pattern that

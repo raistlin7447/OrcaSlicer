@@ -9,6 +9,7 @@
 #include "core/Workload.hpp"
 #include "slicer/Fixtures.hpp"
 
+#include "orcabench_slicer_test_utils.hpp"
 #include "test_utils.hpp"
 
 #include "libslic3r/BoundingBox.hpp"
@@ -28,26 +29,9 @@
 
 using namespace Slic3r;
 using namespace Slic3r::Bench;
+using namespace Slic3r::Bench::Test;
 using Catch::Matchers::EndsWith;
 using Catch::Matchers::WithinAbs;
-
-namespace {
-
-// The source tree's resources as resources_dir() for the scope's lifetime.
-class TreeResources
-{
-public:
-    TreeResources() : m_previous(resources_dir()) { set_resources_dir(ORCABENCH_RESOURCES_DIR); }
-    ~TreeResources() { set_resources_dir(m_previous); }
-
-    TreeResources(const TreeResources&)            = delete;
-    TreeResources& operator=(const TreeResources&) = delete;
-
-private:
-    const std::string m_previous;
-};
-
-} // namespace
 
 TEST_CASE("a procedural fixture is one object with one instance, centered on the bed", "[OrcaBench][Fixtures]")
 {
