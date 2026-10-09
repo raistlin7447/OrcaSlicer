@@ -8,6 +8,7 @@
 #include <set>
 #include <stdexcept>
 #include <string_view>
+#include <vector>
 
 namespace Slic3r { namespace Bench {
 
@@ -24,6 +25,12 @@ std::uint64_t fnv1a(std::uint64_t hash, std::string_view text)
     }
     return hash;
 }
+
+template<typename T> std::uint64_t fnv1a(std::uint64_t hash, const std::vector<T>& items)
+{ return fnv1a(hash, std::string_view(reinterpret_cast<const char*>(items.data()), items.size() * sizeof(T))); }
+
+std::uint64_t fnv1a(std::uint64_t hash, const Transform3d& placement)
+{ return fnv1a(hash, std::string_view(reinterpret_cast<const char*>(placement.data()), placement.matrix().size() * sizeof(double))); }
 
 // Each extrusion role's key in the work stats' metrics, in the enum's order, so a role upstream adds
 // fails to compile until it has one.
@@ -63,6 +70,21 @@ std::uint64_t gcode_hash(const std::string& path)
         return fnv1a(fnv_offset, gcode);
     const std::size_t end = gcode.find('\n', line);
     return fnv1a(fnv1a(fnv_offset, gcode.substr(0, line)), end == std::string_view::npos ? std::string_view() : gcode.substr(end + 1));
+}
+
+std::uint64_t model_hash(const Model& model)
+{
+    std::uint64_t hash = fnv_offset;
+    for (const ModelObject* object : model.objects) {
+        for (const ModelVolume* volume : object->volumes) {
+            hash = fnv1a(hash, volume->mesh().its.vertices);
+            hash = fnv1a(hash, volume->mesh().its.indices);
+            hash = fnv1a(hash, volume->get_matrix());
+        }
+        for (const ModelInstance* instance : object->instances)
+            hash = fnv1a(hash, instance->get_matrix());
+    }
+    return hash;
 }
 
 WorkStats work_of(const GCodeProcessorResult& result, std::uint64_t gcode_bytes)

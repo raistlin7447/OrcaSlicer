@@ -1,5 +1,6 @@
 #include "core/Workload.hpp"
 #include "slicer/Fixtures.hpp"
+#include "slicer/Output.hpp"
 
 #include "libslic3r/Format/STL.hpp"
 #include "libslic3r/Model.hpp"
@@ -7,52 +8,15 @@
 
 #include <boost/filesystem/operations.hpp>
 
-#include <cstdint>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
-#include <vector>
 
 namespace Slic3r { namespace Bench {
 
 namespace {
-
-constexpr std::uint64_t fnv_offset = 14695981039346656037ull;
-constexpr std::uint64_t fnv_prime  = 1099511628211ull;
-
-std::uint64_t fnv1a(std::uint64_t hash, const void* data, std::size_t size)
-{
-    for (const unsigned char* byte = static_cast<const unsigned char*>(data); size > 0; --size, ++byte) {
-        hash ^= *byte;
-        hash *= fnv_prime;
-    }
-    return hash;
-}
-
-template<typename T> std::uint64_t fnv1a(std::uint64_t hash, const std::vector<T>& items)
-{ return fnv1a(hash, items.data(), items.size() * sizeof(T)); }
-
-std::uint64_t fnv1a(std::uint64_t hash, const Transform3d& placement)
-{ return fnv1a(hash, placement.data(), placement.matrix().size() * sizeof(double)); }
-
-// FNV-1a over each part's vertices, triangles and placement and each instance's placement, so the names and
-// settings a file carries do not count.
-std::uint64_t geometry_hash(const Model& model)
-{
-    std::uint64_t hash = fnv_offset;
-    for (const ModelObject* object : model.objects) {
-        for (const ModelVolume* volume : object->volumes) {
-            hash = fnv1a(hash, volume->mesh().its.vertices);
-            hash = fnv1a(hash, volume->mesh().its.indices);
-            hash = fnv1a(hash, volume->get_matrix());
-        }
-        for (const ModelInstance* instance : object->instances)
-            hash = fnv1a(hash, instance->get_matrix());
-    }
-    return hash;
-}
 
 // Reads a fixture's file, or an STL written from the fixture when the entry's format asks, timing the
 // read as Load's one step.
@@ -97,12 +61,14 @@ public:
     {
         if (context.timed.count(Stage::Load) == 0)
             return;
-        // A project's settings are read as opening it in the app reads them.
+        // A 3MF's settings, plates and embedded presets are read with its model and freed after the step.
         DynamicPrintConfig        config;
         ConfigSubstitutionContext substitutions(ForwardCompatibilitySubstitutionRule::Enable);
+        ProjectParts              parts;
         const Clock::time_point   started_at = Clock::now();
         m_model = Model::read_from_file(m_path, &config, &substitutions,
-                                        LoadStrategy::LoadModel | LoadStrategy::LoadConfig | LoadStrategy::AddDefaultInstances);
+                                        LoadStrategy::LoadModel | LoadStrategy::LoadConfig | LoadStrategy::AddDefaultInstances,
+                                        &parts.plates, &parts.presets);
         const Clock::time_point done_at = Clock::now();
 
         double facets = 0., volumes = 0.;
@@ -113,7 +79,7 @@ public:
             }
         measurement.span("read_from_file", Scope::print(), started_at, done_at,
                          {{"facets", facets}, {"objects", double(m_model->objects.size())}, {"volumes", volumes}});
-        measurement.output_hash(geometry_hash(*m_model));
+        measurement.output_hash(model_hash(*m_model));
     }
 
 private:

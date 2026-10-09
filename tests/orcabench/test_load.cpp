@@ -11,12 +11,19 @@
 #include "core/Workload.hpp"
 #include "slicer/Environment.hpp"
 #include "slicer/Fixtures.hpp"
+#include "slicer/Output.hpp"
 
+#include "orcabench_slicer_test_utils.hpp"
+#include "test_utils.hpp"
+
+#include "libslic3r/Model.hpp"
 #include "libslic3r/Utils.hpp"
 
 #include <boost/filesystem/operations.hpp>
+#include <miniz.h>
 
 #include <fstream>
+#include <functional>
 #include <ios>
 #include <iterator>
 #include <optional>
@@ -28,6 +35,7 @@
 
 using namespace Slic3r;
 using namespace Slic3r::Bench;
+using namespace Slic3r::Bench::Test;
 using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::EndsWith;
 using Catch::Matchers::StartsWith;
@@ -60,20 +68,6 @@ WorkloadResult load(const CatalogEntry& entry, const Policy& policy)
     REQUIRE(result.workloads.size() == 1);
     return std::move(result.workloads.front());
 }
-
-// The source tree's resources as resources_dir() for the scope's lifetime.
-class TreeResources
-{
-public:
-    TreeResources() : m_previous(resources_dir()) { set_resources_dir(ORCABENCH_RESOURCES_DIR); }
-    ~TreeResources() { set_resources_dir(m_previous); }
-
-    TreeResources(const TreeResources&)            = delete;
-    TreeResources& operator=(const TreeResources&) = delete;
-
-private:
-    const std::string m_previous;
-};
 
 std::vector<CatalogEntry> loading_catalog()
 {
@@ -126,6 +120,57 @@ TEST_CASE("a load reads the fixture written as a binary or an ASCII STL when its
         REQUIRE(loaded->output_hash.has_value());
     }
     CHECK(binary.output_hash == ascii.output_hash);
+}
+
+TEST_CASE("a model's hash changes with a part's vertices, triangles or placement and an instance's placement", "[OrcaBench][Load]")
+{
+    using Change                 = std::function<void(Model&)>;
+    const auto [changed, change] = GENERATE(table<std::string, Change>({
+        {"a vertex",
+         [](Model& model) {
+             ModelVolume&         part = *model.objects.front()->volumes.front();
+             indexed_triangle_set mesh = part.mesh().its;
+             mesh.vertices.front().x() += 1.f;
+             part.set_mesh(std::move(mesh));
+         }},
+        {"a triangle",
+         [](Model& model) {
+             ModelVolume&         part = *model.objects.front()->volumes.front();
+             indexed_triangle_set mesh = part.mesh().its;
+             std::swap(mesh.indices.front()[1], mesh.indices.front()[2]);
+             part.set_mesh(std::move(mesh));
+         }},
+        {"a part's placement", [](Model& model) { model.objects.front()->volumes.front()->set_offset(Vec3d(1., 0., 0.)); }},
+        {"an instance's placement",
+         [](Model& model) {
+             ModelInstance& instance = *model.objects.front()->instances.front();
+             instance.set_offset(instance.get_offset() + Vec3d(1., 0., 0.));
+         }},
+    }));
+    CAPTURE(changed);
+    const FixtureModel cube = load_fixture("procedural:smoke-cube");
+    REQUIRE(cube.model);
+    Model copy(*cube.model);
+    REQUIRE(model_hash(copy) == model_hash(*cube.model));
+    change(copy);
+    CHECK(model_hash(copy) != model_hash(*cube.model));
+}
+
+TEST_CASE("a load reads a 3MF that embeds a preset", "[OrcaBench][Load]")
+{
+    const ScopedTemporaryDir resources("orcabench");
+    boost::filesystem::create_directories(resources.path() / "handy_models");
+    const std::string project = (resources.path() / "handy_models" / "Embedded.3mf").string();
+    boost::filesystem::copy_file(std::string(ORCABENCH_RESOURCES_DIR) + "/handy_models/OrcaBadge.3mf", project);
+    const std::string preset = R"({"filament_settings_id": ["Embedded"], "from": "project", "name": "Embedded", "version": "2.5.0.0"})";
+    REQUIRE(mz_zip_add_mem_to_archive_file_in_place(project.c_str(), "Metadata/filament_settings_1.config", preset.data(), preset.size(),
+                                                    nullptr, 0, MZ_DEFAULT_COMPRESSION));
+
+    SlicerEnvironment environment(resources.string());
+    const Result      result = run_suite({loading("handy:Embedded.3mf")}, timing({Stage::Load}, 1), WorkloadKinds::instance(), environment);
+    REQUIRE(result.workloads.size() == 1);
+    CAPTURE(result.workloads.front().reason);
+    CHECK(result.workloads.front().outcome == Outcome::Ran);
 }
 
 TEST_CASE("a load times nothing when the run does not time loading", "[OrcaBench][Load]")

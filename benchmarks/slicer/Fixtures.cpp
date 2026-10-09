@@ -62,6 +62,13 @@ std::optional<std::string> fixture_path(const std::string& id)
     throw std::invalid_argument("the fixture '" + id + "' is neither handy: nor procedural:");
 }
 
+ProjectParts::~ProjectParts()
+{
+    release_PlateData_list(plates);
+    for (Preset* preset : presets)
+        delete preset;
+}
+
 FixtureModel load_fixture(const std::string& id)
 {
     FixtureModel fixture;
@@ -71,8 +78,10 @@ FixtureModel load_fixture(const std::string& id)
             fixture.unavailable = *path + " is missing";
             return fixture;
         }
+        ProjectParts parts;
         // A 3MF read without LoadModel has no objects.
-        model = Model::read_from_file(*path, nullptr, nullptr, LoadStrategy::LoadModel | LoadStrategy::AddDefaultInstances);
+        model = Model::read_from_file(*path, nullptr, nullptr, LoadStrategy::LoadModel | LoadStrategy::AddDefaultInstances, &parts.plates,
+                                      &parts.presets);
         // Deletes the backup folder a 3MF read makes, so the model's destructor does not start libslic3r's backup
         // thread, which can deadlock the process's exit.
         model.remove_backup_path_if_exist();

@@ -9,6 +9,9 @@
 #include "core/Workload.hpp"
 #include "slicer/Fixtures.hpp"
 
+#include "orcabench_slicer_test_utils.hpp"
+#include "test_utils.hpp"
+
 #include "libslic3r/BoundingBox.hpp"
 #include "libslic3r/Point.hpp"
 #include "libslic3r/PrintConfig.hpp"
@@ -26,52 +29,9 @@
 
 using namespace Slic3r;
 using namespace Slic3r::Bench;
+using namespace Slic3r::Bench::Test;
 using Catch::Matchers::EndsWith;
 using Catch::Matchers::WithinAbs;
-
-namespace {
-
-// The source tree's resources as resources_dir() for the scope's lifetime.
-class TreeResources
-{
-public:
-    TreeResources() : m_previous(resources_dir()) { set_resources_dir(ORCABENCH_RESOURCES_DIR); }
-    ~TreeResources() { set_resources_dir(m_previous); }
-
-    TreeResources(const TreeResources&)            = delete;
-    TreeResources& operator=(const TreeResources&) = delete;
-
-private:
-    const std::string m_previous;
-};
-
-// An empty directory of the scope's own as temporary_dir() for the scope's lifetime.
-class OwnTemporaryDir
-{
-public:
-    OwnTemporaryDir()
-        : m_previous(temporary_dir())
-        , m_path(boost::filesystem::temp_directory_path() / boost::filesystem::unique_path("orcabench-test-%%%%-%%%%-%%%%"))
-    {
-        boost::filesystem::create_directories(m_path);
-        set_temporary_dir(m_path.string());
-    }
-    ~OwnTemporaryDir()
-    {
-        set_temporary_dir(m_previous);
-        boost::system::error_code ignored;
-        boost::filesystem::remove_all(m_path, ignored);
-    }
-
-    OwnTemporaryDir(const OwnTemporaryDir&)            = delete;
-    OwnTemporaryDir& operator=(const OwnTemporaryDir&) = delete;
-
-private:
-    const std::string             m_previous;
-    const boost::filesystem::path m_path;
-};
-
-} // namespace
 
 TEST_CASE("a procedural fixture is one object with one instance, centered on the bed", "[OrcaBench][Fixtures]")
 {
@@ -121,12 +81,12 @@ TEST_CASE("a handy fixture reads the model the app offers, and a missing one nam
 
 TEST_CASE("a 3MF fixture keeps no backup folder", "[OrcaBench][Fixtures]")
 {
-    const TreeResources   resources;
-    const OwnTemporaryDir temporary;
-    const FixtureModel    badge = load_fixture("handy:OrcaBadge.3mf");
+    const TreeResources            resources;
+    const ScopedSlic3rTemporaryDir temporary("orcabench");
+    const FixtureModel             badge = load_fixture("handy:OrcaBadge.3mf");
     REQUIRE(badge.model);
     std::vector<std::string> files;
-    for (const auto& entry : boost::filesystem::recursive_directory_iterator(temporary_dir()))
+    for (const auto& entry : boost::filesystem::recursive_directory_iterator(temporary.path()))
         if (boost::filesystem::is_regular_file(entry.status()))
             files.push_back(entry.path().string());
     CHECK(files.empty());
