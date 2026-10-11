@@ -4,7 +4,7 @@ set -e
 set -o pipefail
 SECONDS=0
 
-while getopts ":dpa:snt:xbc:i:j:Tuh" opt; do
+while getopts ":dpa:snt:xbc:i:j:TBuh" opt; do
   case "${opt}" in
     d )
         export BUILD_TARGET="deps"
@@ -44,6 +44,9 @@ while getopts ":dpa:snt:xbc:i:j:Tuh" opt; do
     T )
         export BUILD_TESTS="1"
         ;;
+    B )
+        export BUILD_BENCH="1"
+        ;;
     u )
         export BUILD_TARGET="universal"
         ;;
@@ -60,6 +63,7 @@ while getopts ":dpa:snt:xbc:i:j:Tuh" opt; do
         echo "   -i: Add a prefix to ignore during CMake dependency discovery (repeatable), defaults to /opt/local:/usr/local:/opt/homebrew"
         echo "   -j: Set the number of parallel build jobs (CMAKE_BUILD_PARALLEL_LEVEL)"
         echo "   -T: Build and run tests (set ORCA_TESTS_BUILD_ONLY=1 to build without running)"
+        echo "   -B: Build the benchmarking framework (-T builds it too)"
         exit 0
         ;;
     * )
@@ -96,6 +100,14 @@ fi
 
 if [ -z "$OSX_DEPLOYMENT_TARGET" ]; then
   export OSX_DEPLOYMENT_TARGET="12.0"
+fi
+
+# The unit tests include the benchmark framework's, as the CMake default does, and an explicit OFF
+# resets a cached ON.
+if [ -n "$BUILD_BENCH" ] || [ -n "$BUILD_TESTS" ]; then
+  export BENCH_OPTION="ON"
+else
+  export BENCH_OPTION="OFF"
 fi
 
 if [ -z "$CMAKE_IGNORE_PREFIX_PATH" ]; then
@@ -260,6 +272,7 @@ function build_slicer() {
                     -DORCA_TOOLS=ON \
                     ${ORCA_UPDATER_SIG_KEY:+-DORCA_UPDATER_SIG_KEY="$ORCA_UPDATER_SIG_KEY"} \
                     ${BUILD_TESTS:+-DBUILD_TESTS=ON} \
+                    -DORCA_BENCHMARKS="${BENCH_OPTION}" \
                     -DCMAKE_BUILD_TYPE="$BUILD_CONFIG" \
                     -DCMAKE_OSX_ARCHITECTURES="${_ARCH}" \
                     -DCMAKE_OSX_DEPLOYMENT_TARGET="${OSX_DEPLOYMENT_TARGET}" \

@@ -142,10 +142,11 @@ docker run --rm \
     # SLIC3R_GTK into 'wx-config --toolkit=gtk<N>', so omitting it asks for toolkit 'gtk'
     # and no wx build matches -> 'Could NOT find wxWidgets'. BUILD_TESTS=ON is what makes
     # the libslic3r_tests target exist at all. build_linux.sh sets both (lines 218, 226).
+    # ORCA_BENCHMARKS=OFF: benchmarks/ is not in the tree here, and the option follows BUILD_TESTS.
     cmake -S . -B build -G 'Ninja Multi-Config' \
       -DCMAKE_PREFIX_PATH=\$DESTDIR \
       -DwxWidgets_CONFIG_EXECUTABLE=\$DESTDIR/bin/wx-config \
-      -DSLIC3R_GTK=3 -DBUILD_TESTS=ON -DSLIC3R_GUI=OFF \
+      -DSLIC3R_GTK=3 -DBUILD_TESTS=ON -DSLIC3R_GUI=OFF -DORCA_BENCHMARKS=OFF \
       -DSLIC3R_CAD=ON -DSLIC3R_STATIC=1 -DORCA_TOOLS=ON -DCMAKE_BUILD_TYPE=Release
     # SLIC3R_GUI=OFF: this script builds ONLY libslic3r_tests, which links libslic3r and no GUI
     # code, but cmake still PROCESSES the if SLIC3R_GUI block of src/CMakeLists.txt (lines 16-98)
