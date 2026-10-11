@@ -1,0 +1,20 @@
+name: Cancel Builds of Closed Pull Requests
+
+on:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - main
+      - release/*
+
+permissions: {}
+
+jobs:
+  cancel:
+    concurrency:
+      group: Build all-pull_request-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Cancelled unfinished Build all runs of pull request ${{ github.event.pull_request.number }}."
