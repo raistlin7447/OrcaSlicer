@@ -1,0 +1,31 @@
+name: Cancel Builds of Closed Pull Requests
+
+# A closed pull request's Build all run is no longer needed, and a merged one's
+# is replaced by the push build of the branch it went into.
+on:
+  # pull_request_target, so the token can cancel runs of pull requests from forks.
+  # It checks out no pull request code.
+  pull_request_target:
+    types:
+      - closed
+
+permissions:
+  actions: write
+
+jobs:
+  cancel:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel unfinished Build all runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gh api -X GET "repos/$REPO/actions/workflows/build_all.yml/runs" \
+            -f event=pull_request -f head_sha="$HEAD_SHA" -f per_page=100 \
+            --jq '.workflow_runs[] | select(.status != "completed") | .id' |
+          while read -r id; do
+            echo "Cancelling run $id."
+            gh run cancel "$id" -R "$REPO" < /dev/null || echo "::warning::Could not cancel run $id."
+          done
