@@ -1,0 +1,41 @@
+name: TBB bench
+
+on:
+  push:
+    branches: [bench/tbb-2023]
+
+jobs:
+  bench:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x64, os: ubuntu-24.04 }
+          - { name: linux-arm64, os: ubuntu-24.04-arm }
+          - { name: macos-arm64, os: macos-15 }
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          lfs: 'false'
+      - uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "~4.3.0"
+      - name: Apt-Install Dependencies
+        if: runner.os == 'Linux'
+        uses: ./.github/actions/apt-install-deps
+      - name: Brew-Install Dependencies
+        if: runner.os == 'macOS'
+        run: brew install automake texinfo libtool pkgconf yasm nasm
+      - name: Build and bench
+        run: bash scripts/tbb_bench_ci.sh
+      - uses: actions/upload-artifact@v6
+        if: ${{ always() }}
+        with:
+          name: bench-${{ matrix.name }}
+          path: |
+            bench-out/*.json
+            bench-out/*.log
+            bench-out/*.txt
