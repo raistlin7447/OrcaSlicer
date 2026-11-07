@@ -13,6 +13,9 @@
 #include "slicer/Environment.hpp"
 
 #include <boost/nowide/args.hpp>
+#include <tbb/global_control.h>
+#include <tbb/task_arena.h>
+#include <tbb/version.h>
 
 #include <algorithm>
 #include <cstdlib>
@@ -93,6 +96,14 @@ int main(int argc, char** argv)
 {
     // Converts the arguments to UTF-8 on Windows, the encoding orca_bench reads every path in.
     const boost::nowide::args utf8(argc, argv);
+#if TBB_VERSION_MAJOR > 2023 || (TBB_VERSION_MAJOR == 2023 && TBB_VERSION_MINOR >= 2)
+    std::unique_ptr<tbb::global_control> fast_leave;
+    if (std::getenv("ORCA_BENCH_FAST_LEAVE"))
+        fast_leave = std::make_unique<tbb::global_control>(tbb::global_control::leave_policy,
+                                                           std::size_t(tbb::task_arena::leave_policy::fast));
+    std::cerr << "TBB fast leave " << (fast_leave ? "on" : "off") << "\n";
+#endif
+    std::cerr << "TBB headers " << TBB_VERSION_MAJOR << "." << TBB_VERSION_MINOR << ", library " << TBB_runtime_version() << "\n";
     try {
         WorkloadKinds::instance().require_registered();
         const Options options = parse_options(program_arguments(argc, argv));

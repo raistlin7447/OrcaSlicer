@@ -93,7 +93,7 @@ bool reads_whole(const ConfigOptionDef& def, const std::string& value)
             double number = 0;
             text >> number;
         }
-        if (percent && text.peek() == '%')
+        if (percent && !text.eof() && text.peek() == '%')
             text.get();
         if (text.fail() || text.peek() != std::istringstream::traits_type::eof())
             return false;
