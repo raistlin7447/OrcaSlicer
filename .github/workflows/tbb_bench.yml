@@ -30,6 +30,10 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install automake texinfo libtool pkgconf yasm nasm
       - name: Build and bench
+        timeout-minutes: 340
+        env:
+          ROUNDS: 2
+          BENCH_ARGS: --policy quick --kind slice --filter slice/*/arachne*
         run: bash scripts/tbb_bench_ci.sh
       - uses: actions/upload-artifact@v6
         if: ${{ always() }}
