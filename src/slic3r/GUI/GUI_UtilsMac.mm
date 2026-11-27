@@ -2,6 +2,7 @@
 #include <sys/sysctl.h>
 #import <Cocoa/Cocoa.h>
 #import <wx/osx/cocoa/dataview.h>
+#import <wx/textctrl.h>
 #import "GUI_Utils.hpp"
 #include "libslic3r/Color.hpp"
 #include <dispatch/dispatch.h>
@@ -25,6 +26,19 @@ void staticbox_remove_margin(wxStaticBox* sb) {
     NSBox* nativeBox = (NSBox*)sb->GetHandle();
     [nativeBox setBoxType:NSBoxCustom];
     [nativeBox setBorderWidth:0];
+}
+
+void disable_text_substitutions(wxTextCtrl* text_ctrl) {
+    text_ctrl->OSXDisableAllSmartSubstitutions();
+    NSView* view = (NSView*)text_ctrl->GetHandle();
+    if ([view isKindOfClass:[NSScrollView class]])
+        view = ((NSScrollView*)view).documentView;
+    if (![view isKindOfClass:[NSTextView class]])
+        return;
+    NSTextView* text_view = (NSTextView*)view;
+    // wx turns off only smart quotes and dashes, which leaves text replacement and autocorrect free to rewrite the text.
+    [text_view setAutomaticTextReplacementEnabled:NO];
+    [text_view setAutomaticSpellingCorrectionEnabled:NO];
 }
 
 // wxOSX SetShape only clears the window background; it cannot clip to a region. Clipping the

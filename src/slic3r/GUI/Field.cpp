@@ -1,5 +1,6 @@
 #include "GUI.hpp"
 #include "GUI_App.hpp"
+#include "GUI_Utils.hpp"
 #include "I18N.hpp"
 #include "Field.hpp"
 #include "ColorPickerDialog.hpp"
@@ -1038,7 +1039,7 @@ void TextCtrl::BUILD() {
 		// This does not apply to the multi-line edit field, where the last line and a narrow frame around the text is not cleared.
 		temp->SetBackgroundStyle(wxBG_STYLE_PAINT);
 #ifdef __WXOSX__
-    text_ctrl->OSXDisableAllSmartSubstitutions(); // BBS
+    disable_text_substitutions(text_ctrl);
 #endif // __WXOSX__
 
 	temp->SetToolTip(get_tooltip_text(text_value));

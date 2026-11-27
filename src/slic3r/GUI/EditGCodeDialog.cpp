@@ -109,6 +109,9 @@ EditGCodeDialog::EditGCodeDialog(wxWindow* parent, const std::string& key, const
     m_gcode_editor->SetBackgroundColour(*wxWHITE);
     m_gcode_editor->SetInsertionPointEnd();
     wxGetApp().UpdateDarkUI(m_gcode_editor);
+#ifdef __WXOSX__
+    disable_text_substitutions(m_gcode_editor);
+#endif
 
     grid_sizer->Add(param_sizer,  1, wxEXPAND);
     grid_sizer->Add(m_add_btn,      0, wxALIGN_CENTER_VERTICAL);
